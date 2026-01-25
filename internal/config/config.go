@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -10,35 +11,71 @@ import (
 // Config represents the CLI configuration.
 type Config struct {
 	URL      string `yaml:"url"`
+	Token    string `yaml:"token"`
+	Insecure bool   `yaml:"insecure"`
 	Defaults struct {
 		Path     string `yaml:"path"`
 		Platform string `yaml:"platform"`
 	} `yaml:"defaults"`
 }
 
-// Load reads configuration from .csctl.yaml in the current directory or parents.
+// Load reads configuration from .csctl.yaml and environment variables.
+// Environment variables take precedence over file configuration.
+// Supported env vars: CSCTL_URL, CSCTL_TOKEN, CSCTL_INSECURE, CSCTL_PATH, CSCTL_PLATFORM
 func Load() (*Config, error) {
-	path, err := findConfigFile()
-	if err != nil {
-		return &Config{}, nil // Return empty config if not found
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return LoadFromPath("")
 }
 
-// GetToken returns the API token from environment variable.
+// LoadFromPath reads configuration from a specific file and environment variables.
+// If configPath is empty, it searches for .csctl.yaml in current and parent directories.
+// Environment variables take precedence over file configuration.
+func LoadFromPath(configPath string) (*Config, error) {
+	cfg := &Config{}
+
+	// Load from specified path or find config file
+	var path string
+	var err error
+	if configPath != "" {
+		path = configPath
+	} else {
+		path, err = findConfigFile()
+	}
+
+	if path != "" && err == nil {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	// Environment variables override file configuration
+	if url := os.Getenv("CSCTL_URL"); url != "" {
+		cfg.URL = url
+	}
+	if token := os.Getenv("CSCTL_TOKEN"); token != "" {
+		cfg.Token = token
+	}
+	if insecure := os.Getenv("CSCTL_INSECURE"); insecure != "" {
+		cfg.Insecure, _ = strconv.ParseBool(insecure)
+	}
+	if path := os.Getenv("CSCTL_PATH"); path != "" {
+		cfg.Defaults.Path = path
+	}
+	if platform := os.Getenv("CSCTL_PLATFORM"); platform != "" {
+		cfg.Defaults.Platform = platform
+	}
+
+	return cfg, nil
+}
+
+// GetToken returns the API token from config or environment.
+// Deprecated: Use Load().Token instead.
 func GetToken() string {
-	return os.Getenv("CSCTL_TOKEN")
+	cfg, _ := Load()
+	return cfg.Token
 }
 
 func findConfigFile() (string, error) {

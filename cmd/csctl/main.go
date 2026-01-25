@@ -31,10 +31,10 @@ var (
 func main() {
 	// Global flags
 	var (
+		configFlag   = flag.String("config", "", "Path to config file")
 		urlFlag      = flag.String("url", "", "Platform URL")
-		tokenFlag    = flag.String("token", "", "API token")
 		insecureFlag = flag.Bool("insecure", false, "Skip TLS certificate verification")
-		verboseFlag  = flag.Bool("v", false, "Verbose output")
+		logFlag      = flag.String("log", "info", "Log level: debug, info, warn, error")
 	)
 
 	flag.Usage = func() {
@@ -57,12 +57,18 @@ Global Flags:
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 Environment Variables:
-  CSCTL_TOKEN    API token (alternative to --token flag)
+  CSCTL_URL       Platform URL
+  CSCTL_TOKEN     API token
+  CSCTL_INSECURE  Skip TLS verification (true/false)
+  CSCTL_PATH      Default detections path
+  CSCTL_PLATFORM  Default platform (splunk, elastic, etc.)
 
 Examples:
   csctl push                         # Push all rules
   csctl push -m "Deploy Q1 rules"    # With version comment
+  csctl push -filter "brute*"        # Push rules matching pattern
   csctl pull -group endpoint         # Pull specific group
+  csctl pull -filter lateral         # Pull rules containing "lateral"
   csctl sync --resolve=local         # Resolve conflicts with local version
 `)
 	}
@@ -70,27 +76,42 @@ Examples:
 	flag.Parse()
 
 	// Setup logging
-	logLevel := slog.LevelWarn
-	if *verboseFlag {
+	var logLevel slog.Level
+	switch strings.ToLower(*logFlag) {
+	case "debug":
 		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
+	case "warn", "warning":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
 	}
 	logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
 	// Load config
-	cfg, err := config.Load()
+	cfg, err := config.LoadFromPath(*configFlag)
 	if err != nil {
 		logger.Error("failed to load config", slog.Any("error", err))
 	}
 
-	// Resolve URL and token
+	// Resolve URL, token, and insecure from flags or config
 	url := *urlFlag
 	if url == "" && cfg != nil {
 		url = cfg.URL
 	}
 
-	token := *tokenFlag
-	if token == "" {
-		token = config.GetToken()
+	var token string
+	if cfg != nil {
+		token = cfg.Token
+	}
+
+	// Config insecure can be overridden by flag
+	insecure := *insecureFlag
+	if !insecure && cfg != nil {
+		insecure = cfg.Insecure
 	}
 
 	// Get command
@@ -105,7 +126,7 @@ Examples:
 
 	// Create client options
 	var clientOpts []api.ClientOption
-	if *insecureFlag {
+	if insecure {
 		clientOpts = append(clientOpts, api.WithInsecureSkipVerify())
 	}
 	clientOpts = append(clientOpts, api.WithLogger(logger))
@@ -140,6 +161,8 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	message := fs.String("m", "", "Version comment")
 	dryRun := fs.Bool("dry-run", false, "Preview changes without applying")
+	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
+	group := fs.String("group", "", "Filter rules by group")
 	fs.Parse(args)
 
 	path := "detections"
@@ -156,14 +179,22 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	client := api.NewClient(url, token, clientOpts...)
 
-	rules, err := internalyaml.LoadAll(path)
+	allRules, err := internalyaml.LoadAll(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to load rules: %v\n", err)
 		return ExitError
 	}
 
+	// Apply filters
+	var rules []internalyaml.LoadedRule
+	for _, r := range allRules {
+		if matchesFilter(r.Rule.Title, r.Rule.ID, *filter) && matchesGroup(r.Rule.Groups, *group) {
+			rules = append(rules, r)
+		}
+	}
+
 	if len(rules) == 0 {
-		fmt.Println("No rules found")
+		fmt.Println("No rules found matching filters")
 		return ExitSuccess
 	}
 
@@ -226,6 +257,7 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
 	fs := flag.NewFlagSet("pull", flag.ExitOnError)
 	group := fs.String("group", "", "Pull specific group only")
+	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
 	fs.Parse(args)
 
 	path := "detections"
@@ -240,10 +272,18 @@ func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	client := api.NewClient(url, token, clientOpts...)
 
-	rules, err := client.Export(*group)
+	allRules, err := client.Export(*group)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: export failed: %v\n", err)
 		return ExitError
+	}
+
+	// Apply filter
+	var rules []schema.Detection
+	for _, r := range allRules {
+		if matchesFilter(r.Title, r.ID, *filter) {
+			rules = append(rules, r)
+		}
 	}
 
 	fmt.Printf("Fetched %d rules\n", len(rules))
@@ -278,6 +318,8 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	resolve := fs.String("resolve", "", "Resolve conflicts: local or remote")
 	message := fs.String("m", "", "Version comment for pushed changes")
+	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
+	group := fs.String("group", "", "Filter rules by group")
 	fs.Parse(args)
 
 	path := "detections"
@@ -294,10 +336,18 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	lf, _ := lockfile.Load()
 
 	// Load local rules
-	localRules, err := internalyaml.LoadAll(path)
+	allLocalRules, err := internalyaml.LoadAll(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to load local rules: %v\n", err)
 		return ExitError
+	}
+
+	// Apply filters to local rules
+	var localRules []internalyaml.LoadedRule
+	for _, r := range allLocalRules {
+		if matchesFilter(r.Rule.Title, r.Rule.ID, *filter) && matchesGroup(r.Rule.Groups, *group) {
+			localRules = append(localRules, r)
+		}
 	}
 
 	// Get platform status
@@ -317,7 +367,9 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	platformByID := make(map[string]api.SyncStatusRule)
 	for _, r := range status.Rules {
-		platformByID[r.ID] = r
+		if matchesFilter(r.Title, r.ID, *filter) && matchesGroup(r.Groups, *group) {
+			platformByID[r.ID] = r
+		}
 	}
 
 	var conflicts []string
@@ -509,6 +561,8 @@ func cmdValidate(args []string, cfg *config.Config) int {
 
 func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
 	fs := flag.NewFlagSet("diff", flag.ExitOnError)
+	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
+	group := fs.String("group", "", "Filter rules by group")
 	fs.Parse(args)
 
 	path := "detections"
@@ -524,10 +578,18 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 	client := api.NewClient(url, token, clientOpts...)
 	lf, _ := lockfile.Load()
 
-	localRules, err := internalyaml.LoadAll(path)
+	allLocalRules, err := internalyaml.LoadAll(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to load local rules: %v\n", err)
 		return ExitError
+	}
+
+	// Apply filters
+	var localRules []internalyaml.LoadedRule
+	for _, r := range allLocalRules {
+		if matchesFilter(r.Rule.Title, r.Rule.ID, *filter) && matchesGroup(r.Rule.Groups, *group) {
+			localRules = append(localRules, r)
+		}
 	}
 
 	status, err := client.GetSyncStatus()
@@ -545,7 +607,9 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	platformByID := make(map[string]api.SyncStatusRule)
 	for _, r := range status.Rules {
-		platformByID[r.ID] = r
+		if matchesFilter(r.Title, r.ID, *filter) && matchesGroup(r.Groups, *group) {
+			platformByID[r.ID] = r
+		}
 	}
 
 	hasChanges := false
@@ -648,6 +712,50 @@ defaults:
 
 	fmt.Println("\nInitialized! Set CSCTL_TOKEN and update .csctl.yaml with your instance URL.")
 	return ExitSuccess
+}
+
+// matchesFilter checks if a rule matches the filter pattern (glob-like with * wildcard)
+func matchesFilter(title, id, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	filter = strings.ToLower(filter)
+	title = strings.ToLower(title)
+	id = strings.ToLower(id)
+
+	// Check exact ID match first
+	if id == filter {
+		return true
+	}
+
+	// Support * wildcard for glob-like matching
+	if strings.Contains(filter, "*") {
+		pattern := strings.ReplaceAll(filter, "*", "")
+		if strings.HasPrefix(filter, "*") && strings.HasSuffix(filter, "*") {
+			return strings.Contains(title, pattern) || strings.Contains(id, pattern)
+		} else if strings.HasPrefix(filter, "*") {
+			return strings.HasSuffix(title, pattern) || strings.HasSuffix(id, pattern)
+		} else if strings.HasSuffix(filter, "*") {
+			return strings.HasPrefix(title, pattern) || strings.HasPrefix(id, pattern)
+		}
+	}
+
+	// Default: substring match on title or ID
+	return strings.Contains(title, filter) || strings.Contains(id, filter)
+}
+
+// matchesGroup checks if a rule belongs to the specified group
+func matchesGroup(groups []string, group string) bool {
+	if group == "" {
+		return true
+	}
+	group = strings.ToLower(group)
+	for _, g := range groups {
+		if strings.ToLower(g) == group {
+			return true
+		}
+	}
+	return false
 }
 
 func cmdAuth(url, token string, clientOpts []api.ClientOption) int {

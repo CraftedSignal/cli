@@ -61,6 +61,8 @@ func NewClient(baseURL, token string, opts ...ClientOption) *Client {
 // SyncStatusRule represents a rule's sync status.
 type SyncStatusRule struct {
 	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Groups    []string  `json:"groups"`
 	Hash      string    `json:"hash"`
 	Version   int       `json:"version"`
 	UpdatedAt time.Time `json:"updated_at"`
