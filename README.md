@@ -80,12 +80,20 @@ csctl init -from-platform           # Bootstrap from existing rules
 | 1 | Error |
 | 2 | Conflicts detected |
 
-## YAML Format
+## Rule Format
+
+Detection rules are defined in YAML files. Here's a complete example:
+
+### Splunk Example
 
 ```yaml
 id: 550e8400-e29b-41d4-a716-446655440000  # Auto-assigned on first push
 title: Brute Force SSH Detection
+description: |
+  Detects multiple failed SSH login attempts from a single source IP,
+  which may indicate a brute force attack against SSH services.
 platform: splunk
+kind: scheduled
 query: |
   index=auth sourcetype=sshd action=failure
   | stats count by src_ip
@@ -100,9 +108,56 @@ techniques:
   - T1110.001
 tags:
   - ssh
+  - brute-force
 groups:
   - endpoint-threats
 ```
+
+### Microsoft Sentinel Example
+
+```yaml
+title: Suspicious PowerShell Execution
+description: Detects encoded PowerShell commands commonly used by attackers.
+platform: sentinel
+kind: scheduled
+query: |
+  SecurityEvent
+  | where EventID == 4688
+  | where CommandLine contains "-enc" or CommandLine contains "-EncodedCommand"
+  | project TimeGenerated, Computer, Account, CommandLine
+severity: medium
+enabled: true
+frequency: 15m
+period: 1h
+tactics:
+  - execution
+  - defense-evasion
+techniques:
+  - T1059.001
+  - T1027
+tags:
+  - powershell
+  - living-off-the-land
+```
+
+### Field Reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | No | UUID assigned on first push (leave empty for new rules) |
+| `title` | Yes | Human-readable rule name |
+| `description` | No | Detailed explanation of what the rule detects |
+| `platform` | Yes | Target SIEM: `splunk`, `sentinel`, `elastic` |
+| `kind` | No | Rule type: `scheduled` (default), `realtime`, `correlation` |
+| `query` | Yes | Detection query in platform-native syntax |
+| `severity` | No | Alert priority: `low`, `medium`, `high`, `critical` |
+| `enabled` | Yes | Whether the rule is active |
+| `frequency` | No | How often to run (e.g., `5m`, `1h`) |
+| `period` | No | Time window to search (e.g., `15m`, `24h`) |
+| `tactics` | No | MITRE ATT&CK tactics (lowercase, hyphenated) |
+| `techniques` | No | MITRE ATT&CK technique IDs (e.g., `T1059.001`) |
+| `tags` | No | Custom labels for filtering/organization |
+| `groups` | No | Detection groups for logical organization |
 
 ## Folder Structure
 

@@ -1,0 +1,39 @@
+name: TODO to Issue
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  todo:
+    name: Create Issues from TODOs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: TODO to Issue
+        uses: alstr/todo-to-issue-action@v5
+        with:
+          IDENTIFIERS: '[{"name": "TODO", "labels": ["todo"]}, {"name": "FIXME", "labels": ["bug", "priority"]}, {"name": "HACK", "labels": ["tech-debt"]}, {"name": "OPTIMIZE", "labels": ["performance"]}]'
+          CLOSE_ISSUES: true
+          AUTO_ASSIGN: true
+          ISSUE_TEMPLATE: |
+            This issue was automatically created from a code comment.
+
+            **File:** {{ filename }}
+            **Line:** {{ line }}
+            **Author:** {{ author }}
+
+            ---
+
+            {{ body }}
+
+            ---
+
+            _This issue will be automatically closed when the TODO comment is removed._
