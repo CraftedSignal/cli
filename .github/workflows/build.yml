@@ -1,0 +1,67 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  get-go-version:
+    name: Get Go Version
+    runs-on: ubuntu-latest
+    outputs:
+      go_version: ${{ steps.vars.outputs.go_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Go version
+        id: vars
+        run: |
+          goVersion=$(grep '^FROM golang' .github/go/Dockerfile | cut -d ':' -f 2 | cut -d '-' -f 1)
+          echo "go_version=${goVersion}" >> $GITHUB_OUTPUT
+          echo "Using Go version ${goVersion}"
+
+  build:
+    name: Build
+    needs: get-go-version
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go_version }}
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Build binary
+        run: go build -ldflags="-s -w" -o csctl${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/csctl
+        env:
+          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || (matrix.os == 'macos-latest' && 'darwin' || 'windows') }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csctl-${{ matrix.os }}-${{ matrix.arch }}
+          path: csctl${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          retention-days: 7
