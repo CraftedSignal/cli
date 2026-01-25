@@ -78,6 +78,7 @@ type ImportRequest struct {
 	Rules   []schema.Detection `json:"rules"`
 	Message string             `json:"message"`
 	Mode    string             `json:"mode"`
+	Atomic  *bool              `json:"atomic,omitempty"`
 }
 
 // ImportResult represents a single import result.
@@ -91,13 +92,14 @@ type ImportResult struct {
 
 // ImportResponse is the response for import endpoint.
 type ImportResponse struct {
-	Success   bool           `json:"success"`
-	Results   []ImportResult `json:"results"`
-	Created   int            `json:"created"`
-	Updated   int            `json:"updated"`
-	Unchanged int            `json:"unchanged"`
-	Conflicts int            `json:"conflicts"`
-	Errors    int            `json:"errors"`
+	Success    bool           `json:"success"`
+	RolledBack bool           `json:"rolled_back,omitempty"`
+	Results    []ImportResult `json:"results"`
+	Created    int            `json:"created"`
+	Updated    int            `json:"updated"`
+	Unchanged  int            `json:"unchanged"`
+	Conflicts  int            `json:"conflicts"`
+	Errors     int            `json:"errors"`
 }
 
 // APIResponse wraps the standard API response format.
@@ -218,11 +220,13 @@ func (c *Client) Export(group string) ([]schema.Detection, error) {
 }
 
 // Import sends rules to the platform.
-func (c *Client) Import(rules []schema.Detection, message, mode string) (*ImportResponse, error) {
+// If atomic is true (default), the entire import is wrapped in a transaction and rolled back on any error.
+func (c *Client) Import(rules []schema.Detection, message, mode string, atomic bool) (*ImportResponse, error) {
 	req := ImportRequest{
 		Rules:   rules,
 		Message: message,
 		Mode:    mode,
+		Atomic:  &atomic,
 	}
 
 	resp, err := c.do("POST", "/api/v1/detections/import", req)

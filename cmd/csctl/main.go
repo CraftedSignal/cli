@@ -163,6 +163,7 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	dryRun := fs.Bool("dry-run", false, "Preview changes without applying")
 	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
 	group := fs.String("group", "", "Filter rules by group")
+	atomic := fs.Bool("atomic", true, "Rollback all changes if any rule fails")
 	fs.Parse(args)
 
 	path := "detections"
@@ -212,9 +213,19 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 		apiRules = append(apiRules, r.Rule)
 	}
 
-	resp, err := client.Import(apiRules, *message, "push")
+	resp, err := client.Import(apiRules, *message, "push", *atomic)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: import failed: %v\n", err)
+		return ExitError
+	}
+
+	if resp.RolledBack {
+		fmt.Fprintln(os.Stderr, "ROLLED BACK: One or more rules failed, all changes reverted")
+		for _, result := range resp.Results {
+			if result.Error != "" {
+				fmt.Fprintf(os.Stderr, "  ! %s: %s\n", result.Title, result.Error)
+			}
+		}
 		return ExitError
 	}
 
@@ -320,6 +331,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	message := fs.String("m", "", "Version comment for pushed changes")
 	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
 	group := fs.String("group", "", "Filter rules by group")
+	atomic := fs.Bool("atomic", true, "Rollback all changes if any rule fails")
 	fs.Parse(args)
 
 	path := "detections"
@@ -448,9 +460,19 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 			apiRules = append(apiRules, r.Rule)
 		}
 
-		resp, err := client.Import(apiRules, *message, "push")
+		resp, err := client.Import(apiRules, *message, "push", *atomic)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: push failed: %v\n", err)
+			return ExitError
+		}
+
+		if resp.RolledBack {
+			fmt.Fprintln(os.Stderr, "ROLLED BACK: One or more rules failed, all changes reverted")
+			for _, result := range resp.Results {
+				if result.Error != "" {
+					fmt.Fprintf(os.Stderr, "  ! %s: %s\n", result.Title, result.Error)
+				}
+			}
 			return ExitError
 		}
 
