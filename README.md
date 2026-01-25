@@ -111,6 +111,27 @@ tags:
   - brute-force
 groups:
   - endpoint-threats
+tests:
+  positive:
+    - name: Multiple failed logins from single IP
+      description: 6 failed SSH attempts should trigger detection
+      data:
+        - { src_ip: "10.0.0.50", action: "failure", user: "admin" }
+        - { src_ip: "10.0.0.50", action: "failure", user: "root" }
+        - { src_ip: "10.0.0.50", action: "failure", user: "admin" }
+        - { src_ip: "10.0.0.50", action: "failure", user: "test" }
+        - { src_ip: "10.0.0.50", action: "failure", user: "admin" }
+        - { src_ip: "10.0.0.50", action: "failure", user: "guest" }
+  negative:
+    - name: Normal failed login
+      description: Single failed login should not trigger
+      data:
+        - { src_ip: "192.168.1.10", action: "failure", user: "admin" }
+    - name: Successful logins
+      description: Successful logins should not trigger
+      data:
+        - { src_ip: "10.0.0.50", action: "success", user: "admin" }
+        - { src_ip: "10.0.0.50", action: "success", user: "admin" }
 ```
 
 ### Microsoft Sentinel Example
@@ -138,6 +159,30 @@ techniques:
 tags:
   - powershell
   - living-off-the-land
+tests:
+  positive:
+    - name: Encoded PowerShell command
+      description: Base64 encoded command should trigger detection
+      data:
+        - EventID: 4688
+          Computer: "WORKSTATION01"
+          Account: "DOMAIN\\user"
+          CommandLine: "powershell.exe -enc SGVsbG8gV29ybGQ="
+  negative:
+    - name: Normal PowerShell
+      description: Regular PowerShell without encoding should not trigger
+      data:
+        - EventID: 4688
+          Computer: "WORKSTATION01"
+          Account: "DOMAIN\\admin"
+          CommandLine: "powershell.exe -File script.ps1"
+    - name: Other process
+      description: Non-PowerShell process should not trigger
+      data:
+        - EventID: 4688
+          Computer: "WORKSTATION01"
+          Account: "DOMAIN\\user"
+          CommandLine: "cmd.exe /c dir"
 ```
 
 ### Field Reference
@@ -158,6 +203,7 @@ tags:
 | `techniques` | No | MITRE ATT&CK technique IDs (e.g., `T1059.001`) |
 | `tags` | No | Custom labels for filtering/organization |
 | `groups` | No | Detection groups for logical organization |
+| `tests` | No | Test cases with positive (should match) and negative (should not match) samples |
 
 ## Folder Structure
 
