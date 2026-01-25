@@ -60,7 +60,7 @@ jobs:
           CGO_ENABLED: 0
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: csctl-${{ matrix.os }}-${{ matrix.arch }}
           path: csctl${{ matrix.os == 'windows-latest' && '.exe' || '' }}
