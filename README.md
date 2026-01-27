@@ -1,10 +1,10 @@
 # CraftedSignal CLI
 
-Command-line tool for managing detection rules as code with bidirectional sync to CraftedSignal platform.
+Command-line tool for managing detection rules as code with bidirectional sync to your CraftedSignal platform.
 
 ## Installation
 
-Download from releases or build from source:
+Download from [the GitHub releases](https://github.com/CraftedSignal/cli/releases), [pull the container image](https://github.com/orgs/CraftedSignal/packages?repo_name=cli) or install from source yourself:
 
 ```bash
 go install github.com/craftedsignal/cli/cmd/csctl@latest
@@ -15,17 +15,17 @@ go install github.com/craftedsignal/cli/cmd/csctl@latest
 Create `.csctl.yaml` in your repository root:
 
 ```yaml
+# if not using CraftedSignal SaaS, specify your endpoint
 url: https://your-craftedsignal-instance.com
 
+# your API token (or use env variable CSCTL_TOKEN)
+token: ""
+
 defaults:
+  # the directory of your ruleset to sync
   path: detections/
+  # default platform to assume for rules
   platform: splunk
-```
-
-Set your API token:
-
-```bash
-export CSCTL_TOKEN=your-api-token
 ```
 
 ## Usage
@@ -89,28 +89,27 @@ Detection rules are defined in YAML files. Here's a complete example:
 ```yaml
 id: 550e8400-e29b-41d4-a716-446655440000  # Auto-assigned on first push
 title: Brute Force SSH Detection
+platform: splunk
 description: |
   Detects multiple failed SSH login attempts from a single source IP,
   which may indicate a brute force attack against SSH services.
-platform: splunk
-kind: scheduled
+
 query: |
   index=auth sourcetype=sshd action=failure
   | stats count by src_ip
   | where count > 5
+
+
+kind: scheduled
 severity: high
 enabled: true
 frequency: 5m
 period: 15m
-tactics:
-  - credential-access
-techniques:
-  - T1110.001
-tags:
-  - ssh
-  - brute-force
-groups:
-  - endpoint-threats
+tactics: [credential-access]
+techniques: [T1110.001]
+tags: [ssh, brute-force]
+groups: [endpoint-threats]
+
 tests:
   positive:
     - name: Multiple failed logins from single IP

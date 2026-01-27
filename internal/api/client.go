@@ -147,21 +147,45 @@ func (c *Client) do(method, path string, body interface{}) (*http.Response, erro
 	return resp, nil
 }
 
-// ValidateToken checks if the token is valid.
-func (c *Client) ValidateToken() error {
-	resp, err := c.do("GET", "/api/v1/detections/sync-status", nil)
+// MeResponse represents the authenticated user info.
+type MeResponse struct {
+	Company    string   `json:"company"`
+	APIKeyName string   `json:"api_key_name"`
+	Scopes     []string `json:"scopes"`
+}
+
+// GetMe returns information about the authenticated API key.
+func (c *Client) GetMe() (*MeResponse, error) {
+	resp, err := c.do("GET", "/api/v1/me", nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("invalid or expired token")
+		return nil, fmt.Errorf("invalid or expired token")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
-	return nil
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	var result MeResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ValidateToken checks if the token is valid.
+func (c *Client) ValidateToken() error {
+	_, err := c.GetMe()
+	return err
 }
 
 // GetSyncStatus fetches the current sync status of all rules.

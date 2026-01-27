@@ -28,3 +28,6 @@ Thumbs.db
 
 # Build artifacts
 dist/
+
+*.lock
+detections/

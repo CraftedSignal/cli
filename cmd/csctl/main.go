@@ -35,6 +35,7 @@ func main() {
 		urlFlag      = flag.String("url", "", "Platform URL")
 		insecureFlag = flag.Bool("insecure", false, "Skip TLS certificate verification")
 		logFlag      = flag.String("log", "info", "Log level: debug, info, warn, error")
+		path         = flag.String("path", "detections/", "Path to detections folder")
 	)
 
 	flag.Usage = func() {
@@ -135,17 +136,17 @@ Examples:
 	var exitCode int
 	switch cmd {
 	case "push":
-		exitCode = cmdPush(url, token, cmdArgs, cfg, clientOpts)
+		exitCode = cmdPush(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "pull":
-		exitCode = cmdPull(url, token, cmdArgs, cfg, clientOpts)
+		exitCode = cmdPull(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "sync":
-		exitCode = cmdSync(url, token, cmdArgs, cfg, clientOpts)
+		exitCode = cmdSync(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "validate":
-		exitCode = cmdValidate(cmdArgs, cfg)
+		exitCode = cmdValidate(cmdArgs, cfg, *path)
 	case "diff":
-		exitCode = cmdDiff(url, token, cmdArgs, cfg, clientOpts)
+		exitCode = cmdDiff(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "init":
-		exitCode = cmdInit(url, token, cmdArgs, clientOpts)
+		exitCode = cmdInit(url, token, cmdArgs, clientOpts, *path)
 	case "auth":
 		exitCode = cmdAuth(url, token, clientOpts)
 	default:
@@ -157,7 +158,7 @@ Examples:
 	os.Exit(exitCode)
 }
 
-func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
+func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	message := fs.String("m", "", "Version comment")
 	dryRun := fs.Bool("dry-run", false, "Preview changes without applying")
@@ -166,11 +167,9 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	atomic := fs.Bool("atomic", true, "Rollback all changes if any rule fails")
 	fs.Parse(args)
 
-	path := "detections"
+	path := strings.TrimRight(rulePath, "/")
 	if fs.NArg() > 0 {
 		path = fs.Arg(0)
-	} else if cfg != nil && cfg.Defaults.Path != "" {
-		path = cfg.Defaults.Path
 	}
 
 	if url == "" || token == "" {
@@ -265,13 +264,13 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	return ExitSuccess
 }
 
-func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
+func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("pull", flag.ExitOnError)
 	group := fs.String("group", "", "Pull specific group only")
 	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
 	fs.Parse(args)
 
-	path := "detections"
+	path := strings.TrimRight(rulePath, "/")
 	if fs.NArg() > 0 {
 		path = fs.Arg(0)
 	}
@@ -325,7 +324,7 @@ func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []
 	return ExitSuccess
 }
 
-func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
+func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	resolve := fs.String("resolve", "", "Resolve conflicts: local or remote")
 	message := fs.String("m", "", "Version comment for pushed changes")
@@ -334,7 +333,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	atomic := fs.Bool("atomic", true, "Rollback all changes if any rule fails")
 	fs.Parse(args)
 
-	path := "detections"
+	path := strings.TrimRight(rulePath, "/")
 	if fs.NArg() > 0 {
 		path = fs.Arg(0)
 	}
@@ -536,11 +535,11 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	return ExitSuccess
 }
 
-func cmdValidate(args []string, cfg *config.Config) int {
+func cmdValidate(args []string, cfg *config.Config, rulePath string) int {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	fs.Parse(args)
 
-	path := "detections"
+	path := strings.TrimRight(rulePath, "/")
 	if fs.NArg() > 0 {
 		path = fs.Arg(0)
 	}
@@ -581,13 +580,13 @@ func cmdValidate(args []string, cfg *config.Config) int {
 	return ExitSuccess
 }
 
-func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption) int {
+func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("diff", flag.ExitOnError)
 	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
 	group := fs.String("group", "", "Filter rules by group")
 	fs.Parse(args)
 
-	path := "detections"
+	path := strings.TrimRight(rulePath, "/")
 	if fs.NArg() > 0 {
 		path = fs.Arg(0)
 	}
@@ -677,20 +676,22 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 	return ExitSuccess
 }
 
-func cmdInit(url, token string, args []string, clientOpts []api.ClientOption) int {
+func cmdInit(url, token string, args []string, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	fromPlatform := fs.Bool("from-platform", false, "Bootstrap from existing platform rules")
 	fs.Parse(args)
+
+	path := strings.TrimRight(rulePath, "/")
 
 	if *fromPlatform {
 		if url == "" || token == "" {
 			fmt.Fprintln(os.Stderr, "Error: URL and token required for --from-platform")
 			return ExitError
 		}
-		return cmdPull(url, token, []string{}, nil, clientOpts)
+		return cmdPull(url, token, []string{}, nil, clientOpts, path)
 	}
 
-	dirs := []string{"detections/endpoint", "detections/network", "detections/cloud"}
+	dirs := []string{path + "/endpoint", path + "/network", path + "/cloud"}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to create %s: %v\n", dir, err)
@@ -710,7 +711,7 @@ func cmdInit(url, token string, args []string, clientOpts []api.ClientOption) in
 		Frequency:   "1h",
 		Period:      "1h",
 	}
-	examplePath := "detections/endpoint/example-detection.yaml"
+	examplePath := path + "/endpoint/example-detection.yaml"
 	if err := internalyaml.SaveFile(example, examplePath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create example: %v\n", err)
 		return ExitError
@@ -788,11 +789,15 @@ func cmdAuth(url, token string, clientOpts []api.ClientOption) int {
 	}
 
 	client := api.NewClient(url, token, clientOpts...)
-	if err := client.ValidateToken(); err != nil {
+	me, err := client.GetMe()
+	if err != nil {
 		fmt.Printf("Authentication failed: %v\n", err)
 		return ExitError
 	}
 
 	fmt.Printf("Authenticated to %s\n", url)
+	fmt.Printf("  Company:  %s\n", me.Company)
+	fmt.Printf("  API Key:  %s\n", me.APIKeyName)
+	fmt.Printf("  Scopes:   %s\n", strings.Join(me.Scopes, ", "))
 	return ExitSuccess
 }

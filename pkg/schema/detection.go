@@ -1,5 +1,7 @@
 package schema
 
+import "encoding/json"
+
 // Detection represents a detection rule in YAML format.
 type Detection struct {
 	ID          string   `yaml:"id,omitempty" json:"id,omitempty"`
@@ -26,8 +28,31 @@ type Tests struct {
 }
 
 // Test represents a single test case with sample log data.
+// Data can be provided as YAML via 'data' or as a JSON string via 'json'.
 type Test struct {
 	Name        string                   `yaml:"name" json:"name"`
 	Description string                   `yaml:"description,omitempty" json:"description,omitempty"`
-	Data        []map[string]interface{} `yaml:"data" json:"data"`
+	Data        []map[string]interface{} `yaml:"data,omitempty" json:"data,omitempty"`
+	JSON        string                   `yaml:"json,omitempty" json:"json,omitempty"`
+}
+
+// GetData returns the test data, parsing from JSON if the json field is used.
+// Returns nil if neither data nor json is provided, or if JSON parsing fails.
+func (t *Test) GetData() []map[string]interface{} {
+	if len(t.Data) > 0 {
+		return t.Data
+	}
+	if t.JSON != "" {
+		var data []map[string]interface{}
+		if err := json.Unmarshal([]byte(t.JSON), &data); err != nil {
+			// Try parsing as single object and wrap in array
+			var single map[string]interface{}
+			if err := json.Unmarshal([]byte(t.JSON), &single); err == nil {
+				return []map[string]interface{}{single}
+			}
+			return nil
+		}
+		return data
+	}
+	return nil
 }

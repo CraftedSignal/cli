@@ -71,13 +71,6 @@ func LoadFromPath(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-// GetToken returns the API token from config or environment.
-// Deprecated: Use Load().Token instead.
-func GetToken() string {
-	cfg, _ := Load()
-	return cfg.Token
-}
-
 func findConfigFile() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
