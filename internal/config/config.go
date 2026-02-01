@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,6 +49,19 @@ func LoadFromPath(configPath string) (*Config, error) {
 		}
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
+		}
+
+		// Warn if token is stored in config file (should use CSCTL_TOKEN env var)
+		if cfg.Token != "" {
+			fmt.Fprintf(os.Stderr, "WARNING: token found in config file %s -- use CSCTL_TOKEN env var instead\n", path)
+		}
+
+		// Check file permissions
+		if info, statErr := os.Stat(path); statErr == nil {
+			perm := info.Mode().Perm()
+			if perm&0077 != 0 {
+				fmt.Fprintf(os.Stderr, "WARNING: config file %s has permissive permissions %04o -- recommend 0600\n", path, perm)
+			}
 		}
 	}
 

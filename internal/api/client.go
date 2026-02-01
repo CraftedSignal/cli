@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/craftedsignal/cli/pkg/schema"
@@ -27,9 +29,13 @@ type ClientOption func(*Client)
 // WithInsecureSkipVerify disables TLS certificate verification.
 func WithInsecureSkipVerify() ClientOption {
 	return func(c *Client) {
-		c.httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		transport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			transport = &http.Transport{}
 		}
+		t := transport.Clone()
+		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		c.httpClient.Transport = t
 	}
 }
 
@@ -92,6 +98,7 @@ type ImportResult struct {
 
 // ImportResponse is the response for import endpoint.
 type ImportResponse struct {
+	StatusCode int            `json:"-"` // HTTP status code (not from JSON)
 	Success    bool           `json:"success"`
 	RolledBack bool           `json:"rolled_back,omitempty"`
 	Results    []ImportResult `json:"results"`
@@ -166,7 +173,7 @@ func (c *Client) GetMe() (*MeResponse, error) {
 		return nil, fmt.Errorf("invalid or expired token")
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -197,7 +204,7 @@ func (c *Client) GetSyncStatus() (*SyncStatusResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("failed to get sync status: %s", string(body))
 	}
 
@@ -217,7 +224,7 @@ func (c *Client) GetSyncStatus() (*SyncStatusResponse, error) {
 func (c *Client) Export(group string) ([]schema.Detection, error) {
 	path := "/api/v1/detections/export?format=json"
 	if group != "" {
-		path += "&group=" + group
+		path += "&group=" + url.QueryEscape(group)
 	}
 
 	resp, err := c.do("GET", path, nil)
@@ -227,7 +234,7 @@ func (c *Client) Export(group string) ([]schema.Detection, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("failed to export: %s", string(body))
 	}
 
@@ -253,21 +260,55 @@ func (c *Client) Import(rules []schema.Detection, message, mode string, atomic b
 		Atomic:  &atomic,
 	}
 
-	resp, err := c.do("POST", "/api/v1/detections/import", req)
-	if err != nil {
-		return nil, err
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt <= 3; attempt++ {
+		resp, err = c.do("POST", "/api/v1/detections/import", req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests {
+			break
+		}
+		resp.Body.Close()
+		retryAfter := resp.Header.Get("Retry-After")
+		wait := parseRetryAfter(retryAfter, time.Duration(attempt+1)*2*time.Second)
+		c.logger.Warn("rate limited, retrying", slog.Duration("wait", wait), slog.Int("attempt", attempt+1))
+		time.Sleep(wait)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 500 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("server error %d: %s", resp.StatusCode, string(body))
+	}
+
 	var apiResp APIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse response (status %d): %w", resp.StatusCode, err)
 	}
 
 	var result ImportResponse
 	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse import data (status %d): %w", resp.StatusCode, err)
 	}
 
+	result.StatusCode = resp.StatusCode
 	return &result, nil
+}
+
+func parseRetryAfter(header string, fallback time.Duration) time.Duration {
+	if header == "" {
+		return fallback
+	}
+	if seconds, err := strconv.Atoi(header); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+	if t, err := http.ParseTime(header); err == nil {
+		wait := time.Until(t)
+		if wait > 0 {
+			return wait
+		}
+	}
+	return fallback
 }

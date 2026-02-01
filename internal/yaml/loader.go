@@ -24,13 +24,32 @@ type LoadedRule struct {
 func LoadAll(root string) ([]LoadedRule, error) {
 	var rules []LoadedRule
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	absRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve root path: %w", err)
+	}
+
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
+		// Skip symlinks to prevent path traversal
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+
 		if info.IsDir() {
 			return nil
+		}
+
+		// Verify resolved path stays within root directory (resolve symlinks in path components)
+		absPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("failed to resolve path: %w", err)
+		}
+		if !strings.HasPrefix(absPath, absRoot+string(filepath.Separator)) && absPath != absRoot {
+			return fmt.Errorf("path traversal detected: %s", path)
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
@@ -329,9 +348,20 @@ func mergeGroups(folder, explicit []string) []string {
 
 // ComputeHash computes a hash of the detection's sync-relevant fields.
 func ComputeHash(r schema.Detection) string {
-	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%v|%v|%v",
+	tactics := strings.Join(normalizeSlice(r.Tactics), ",")
+	techniques := strings.Join(normalizeSlice(r.Techniques), ",")
+	tags := strings.Join(normalizeSlice(r.Tags), ",")
+
+	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
 		r.Title, r.Description, r.Platform, r.Query, r.Severity, r.Kind,
-		r.Frequency, r.Period, r.Tactics, r.Techniques, r.Tags)
+		r.Frequency, r.Period, tactics, techniques, tags)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
+}
+
+func normalizeSlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

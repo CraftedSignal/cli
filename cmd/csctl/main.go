@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
+	"github.com/craftedsignal/cli/internal/validate"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
 	"github.com/craftedsignal/cli/pkg/schema"
 )
@@ -95,7 +97,11 @@ Examples:
 	// Load config
 	cfg, err := config.LoadFromPath(*configFlag)
 	if err != nil {
-		logger.Error("failed to load config", slog.Any("error", err))
+		if *configFlag != "" {
+			fmt.Fprintf(os.Stderr, "Error: failed to load config file %s: %v\n", *configFlag, err)
+			os.Exit(ExitError)
+		}
+		logger.Warn("could not load config", slog.Any("error", err))
 	}
 
 	// Resolve URL, token, and insecure from flags or config
@@ -158,6 +164,12 @@ Examples:
 	os.Exit(exitCode)
 }
 
+// conflictInfo tracks a sync conflict by rule ID and title.
+type conflictInfo struct {
+	ID    string
+	Title string
+}
+
 func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	message := fs.String("m", "", "Version comment")
@@ -200,6 +212,16 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	fmt.Printf("Found %d rules\n", len(rules))
 
+	// Validate before pushing
+	vResult := validateRules(rules)
+	if !vResult.Valid() {
+		fmt.Fprintln(os.Stderr, "Validation errors:")
+		for _, e := range vResult.Errors {
+			fmt.Fprintf(os.Stderr, "  ! %s\n", e)
+		}
+		return ExitError
+	}
+
 	if *dryRun {
 		for _, r := range rules {
 			fmt.Printf("  %s (%s)\n", r.Rule.Title, r.FilePath)
@@ -218,6 +240,8 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitError
 	}
 
+	logImportStatus(resp.StatusCode)
+
 	if resp.RolledBack {
 		fmt.Fprintln(os.Stderr, "ROLLED BACK: One or more rules failed, all changes reverted")
 		for _, result := range resp.Results {
@@ -229,31 +253,35 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	}
 
 	lf, _ := lockfile.Load()
-	for i, result := range resp.Results {
-		if result.Action == "created" || result.Action == "updated" {
-			if rules[i].Rule.ID == "" && result.ID != "" {
-				rules[i].Rule.ID = result.ID
-				internalyaml.SaveFile(rules[i].Rule, rules[i].FilePath)
-			}
-			lf.Update(result.ID, rules[i].FilePath, rules[i].Hash, result.Version)
-		}
 
-		symbol := "?"
-		switch result.Action {
-		case "created":
-			symbol = "+"
-		case "updated":
-			symbol = "~"
-		case "unchanged":
-			symbol = "="
-		case "error":
-			symbol = "!"
+	if len(resp.Results) != len(rules) {
+		fmt.Fprintf(os.Stderr, "Warning: result count (%d) does not match rule count (%d), skipping lockfile update\n",
+			len(resp.Results), len(rules))
+		for _, result := range resp.Results {
+			fmt.Printf("  %s %s", actionSymbol(result.Action), result.Title)
+			if result.Error != "" {
+				fmt.Printf(" (%s)", result.Error)
+			}
+			fmt.Println()
 		}
-		fmt.Printf("  %s %s", symbol, result.Title)
-		if result.Error != "" {
-			fmt.Printf(" (%s)", result.Error)
+	} else {
+		for i, result := range resp.Results {
+			if result.Action == "created" || result.Action == "updated" {
+				if rules[i].Rule.ID == "" && result.ID != "" {
+					rules[i].Rule.ID = result.ID
+					if saveErr := internalyaml.SaveFile(rules[i].Rule, rules[i].FilePath); saveErr != nil {
+						fmt.Fprintf(os.Stderr, "  Warning: failed to write ID back to %s: %v\n", rules[i].FilePath, saveErr)
+					}
+				}
+				lf.Update(result.ID, rules[i].FilePath, rules[i].Hash, result.Version)
+			}
+
+			fmt.Printf("  %s %s", actionSymbol(result.Action), result.Title)
+			if result.Error != "" {
+				fmt.Printf(" (%s)", result.Error)
+			}
+			fmt.Println()
 		}
-		fmt.Println()
 	}
 
 	lf.Save()
@@ -306,7 +334,7 @@ func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []
 			dir = filepath.Join(path, r.Groups[0])
 		}
 
-		filename := strings.ReplaceAll(strings.ToLower(r.Title), " ", "-") + ".yaml"
+		filename := sanitizeFilename(r.Title)
 		filePath := filepath.Join(dir, filename)
 
 		if err := internalyaml.SaveFile(r, filePath); err != nil {
@@ -383,7 +411,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 		}
 	}
 
-	var conflicts []string
+	var conflicts []conflictInfo
 	var toPush []internalyaml.LoadedRule
 	var toPull []string
 
@@ -401,7 +429,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 		platformChanged := !wasSynced || platform.Hash != lastSync.LastSyncedHash
 
 		if localChanged && platformChanged {
-			conflicts = append(conflicts, fmt.Sprintf("%s: modified both locally and on platform", local.Rule.Title))
+			conflicts = append(conflicts, conflictInfo{ID: id, Title: local.Rule.Title})
 		} else if localChanged {
 			toPush = append(toPush, local)
 		} else if platformChanged {
@@ -422,7 +450,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	if len(conflicts) > 0 && *resolve == "" {
 		fmt.Println("CONFLICTS detected:")
 		for _, c := range conflicts {
-			fmt.Printf("  ! %s\n", c)
+			fmt.Printf("  ! %s (ID: %s)\n", c.Title, c.ID)
 		}
 		fmt.Println("\nResolve with:")
 		fmt.Println("  csctl sync --resolve=local   # Keep local changes")
@@ -432,23 +460,25 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	if *resolve == "local" {
 		for _, c := range conflicts {
-			for _, r := range localRules {
-				if strings.Contains(c, r.Rule.Title) {
-					toPush = append(toPush, r)
-					break
-				}
+			if local, exists := localByID[c.ID]; exists {
+				toPush = append(toPush, local)
 			}
 		}
 	} else if *resolve == "remote" {
-		for id := range platformByID {
-			if local, exists := localByID[id]; exists {
-				for _, c := range conflicts {
-					if strings.Contains(c, local.Rule.Title) {
-						toPull = append(toPull, id)
-						break
-					}
-				}
+		for _, c := range conflicts {
+			toPull = append(toPull, c.ID)
+		}
+	}
+
+	// Validate before pushing
+	if len(toPush) > 0 {
+		vResult := validateRules(toPush)
+		if !vResult.Valid() {
+			fmt.Fprintln(os.Stderr, "Validation errors:")
+			for _, e := range vResult.Errors {
+				fmt.Fprintf(os.Stderr, "  ! %s\n", e)
 			}
+			return ExitError
 		}
 	}
 
@@ -465,6 +495,8 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 			return ExitError
 		}
 
+		logImportStatus(resp.StatusCode)
+
 		if resp.RolledBack {
 			fmt.Fprintln(os.Stderr, "ROLLED BACK: One or more rules failed, all changes reverted")
 			for _, result := range resp.Results {
@@ -475,15 +507,25 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 			return ExitError
 		}
 
-		for i, result := range resp.Results {
-			if result.Action == "created" || result.Action == "updated" {
-				if toPush[i].Rule.ID == "" && result.ID != "" {
-					toPush[i].Rule.ID = result.ID
-					internalyaml.SaveFile(toPush[i].Rule, toPush[i].FilePath)
-				}
-				lf.Update(result.ID, toPush[i].FilePath, toPush[i].Hash, result.Version)
+		if len(resp.Results) != len(toPush) {
+			fmt.Fprintf(os.Stderr, "Warning: result count (%d) does not match rule count (%d), skipping lockfile update\n",
+				len(resp.Results), len(toPush))
+			for _, result := range resp.Results {
+				fmt.Printf("  -> %s (%s)\n", result.Title, result.Action)
 			}
-			fmt.Printf("  -> %s (%s)\n", result.Title, result.Action)
+		} else {
+			for i, result := range resp.Results {
+				if result.Action == "created" || result.Action == "updated" {
+					if toPush[i].Rule.ID == "" && result.ID != "" {
+						toPush[i].Rule.ID = result.ID
+						if saveErr := internalyaml.SaveFile(toPush[i].Rule, toPush[i].FilePath); saveErr != nil {
+							fmt.Fprintf(os.Stderr, "  Warning: failed to write ID back to %s: %v\n", toPush[i].FilePath, saveErr)
+						}
+					}
+					lf.Update(result.ID, toPush[i].FilePath, toPush[i].Hash, result.Version)
+				}
+				fmt.Printf("  -> %s (%s)\n", result.Title, result.Action)
+			}
 		}
 	}
 
@@ -510,7 +552,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 				dir = filepath.Join(path, r.Groups[0])
 			}
 
-			filename := strings.ReplaceAll(strings.ToLower(r.Title), " ", "-") + ".yaml"
+			filename := sanitizeFilename(r.Title)
 			filePath := filepath.Join(dir, filename)
 
 			if err := internalyaml.SaveFile(r, filePath); err != nil {
@@ -550,29 +592,21 @@ func cmdValidate(args []string, cfg *config.Config, rulePath string) int {
 		return ExitError
 	}
 
-	errors := 0
+	errorCount := 0
 	for _, r := range rules {
-		var issues []string
-		if r.Rule.Title == "" {
-			issues = append(issues, "missing title")
-		}
-		if r.Rule.Platform == "" {
-			issues = append(issues, "missing platform")
-		}
-		if r.Rule.Query == "" {
-			issues = append(issues, "missing query")
-		}
-
-		if len(issues) > 0 {
-			fmt.Printf("  ! %s: %s\n", r.FilePath, strings.Join(issues, ", "))
-			errors++
+		result := validate.ValidateRule(r.Rule, r.FilePath)
+		if !result.Valid() {
+			for _, e := range result.Errors {
+				fmt.Printf("  ! %s\n", e)
+			}
+			errorCount++
 		} else {
 			fmt.Printf("  ok %s\n", r.FilePath)
 		}
 	}
 
-	if errors > 0 {
-		fmt.Fprintf(os.Stderr, "\n%d files have errors\n", errors)
+	if errorCount > 0 {
+		fmt.Fprintf(os.Stderr, "\n%d files have errors\n", errorCount)
 		return ExitError
 	}
 
@@ -726,7 +760,7 @@ defaults:
   path: detections/
   platform: splunk
 `
-		if err := os.WriteFile(".csctl.yaml", []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile(".csctl.yaml", []byte(configContent), 0600); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to create .csctl.yaml: %v\n", err)
 			return ExitError
 		}
@@ -751,16 +785,15 @@ func matchesFilter(title, id, filter string) bool {
 		return true
 	}
 
-	// Support * wildcard for glob-like matching
-	if strings.Contains(filter, "*") {
-		pattern := strings.ReplaceAll(filter, "*", "")
-		if strings.HasPrefix(filter, "*") && strings.HasSuffix(filter, "*") {
-			return strings.Contains(title, pattern) || strings.Contains(id, pattern)
-		} else if strings.HasPrefix(filter, "*") {
-			return strings.HasSuffix(title, pattern) || strings.HasSuffix(id, pattern)
-		} else if strings.HasSuffix(filter, "*") {
-			return strings.HasPrefix(title, pattern) || strings.HasPrefix(id, pattern)
+	// If filter contains glob characters, use filepath.Match
+	if strings.ContainsAny(filter, "*?[") {
+		if matched, err := filepath.Match(filter, title); err == nil && matched {
+			return true
 		}
+		if matched, err := filepath.Match(filter, id); err == nil && matched {
+			return true
+		}
+		return false
 	}
 
 	// Default: substring match on title or ID
@@ -800,4 +833,62 @@ func cmdAuth(url, token string, clientOpts []api.ClientOption) int {
 	fmt.Printf("  API Key:  %s\n", me.APIKeyName)
 	fmt.Printf("  Scopes:   %s\n", strings.Join(me.Scopes, ", "))
 	return ExitSuccess
+}
+
+// actionSymbol returns a display symbol for an import result action.
+func actionSymbol(action string) string {
+	switch action {
+	case "created":
+		return "+"
+	case "updated":
+		return "~"
+	case "unchanged":
+		return "="
+	case "error":
+		return "!"
+	default:
+		return "?"
+	}
+}
+
+// sanitizeFilename converts a rule title to a safe filename.
+func sanitizeFilename(title string) string {
+	name := strings.ToLower(title)
+	name = strings.ReplaceAll(name, " ", "-")
+	for _, ch := range []string{"/", "\\", ":", "?", "<", ">", "|", "*", "\"", "'", "\n", "\r", "\t"} {
+		name = strings.ReplaceAll(name, ch, "")
+	}
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
+	}
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "unnamed"
+	}
+	return name + ".yaml"
+}
+
+// validateRules validates a slice of loaded rules using the validate package.
+func validateRules(rules []internalyaml.LoadedRule) *validate.Result {
+	loaded := make([]validate.LoadedDetection, len(rules))
+	for i, r := range rules {
+		loaded[i] = validate.LoadedDetection{Rule: r.Rule, File: r.FilePath}
+	}
+	return validate.ValidateAll(loaded)
+}
+
+// logImportStatus prints warnings for non-200 import status codes.
+func logImportStatus(statusCode int) {
+	switch statusCode {
+	case http.StatusConflict:
+		fmt.Fprintln(os.Stderr, "Warning: server reported conflicts (409)")
+	case http.StatusUnprocessableEntity:
+		fmt.Fprintln(os.Stderr, "Warning: server rejected some rules (422)")
+	case http.StatusOK, 207:
+		// Normal
+	default:
+		if statusCode != 0 {
+			fmt.Fprintf(os.Stderr, "Warning: unexpected status %d from server\n", statusCode)
+		}
+	}
 }
