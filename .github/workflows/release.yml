@@ -2,16 +2,20 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      new_release: ${{ steps.semver.outputs.new_release_published }}
 
     steps:
       - name: Checkout
@@ -32,7 +36,30 @@ jobs:
           go-version: ${{ steps.vars.outputs.go_version }}
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install semantic-release
+        run: npm install --no-save semantic-release@24 @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
+
+      - name: Semantic Version
+        id: semver
+        uses: cycjimmy/semantic-release-action@v6
+        with:
+          semantic_version: 24
+          extra_plugins: |
+            conventional-changelog-conventionalcommits
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Syft
+        if: steps.semver.outputs.new_release_published == 'true'
+        uses: anchore/sbom-action/download-syft@v0
+
       - name: Run GoReleaser
+        if: steps.semver.outputs.new_release_published == 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -40,3 +67,11 @@ jobs:
           args: release --clean --config .github/goreleaser.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release artifacts
+        if: steps.semver.outputs.new_release_published == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-artifacts
+          path: dist/
+          retention-days: 30
