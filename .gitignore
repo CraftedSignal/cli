@@ -1,6 +1,6 @@
 # Binaries
-csctl
-csctl.exe
+.\csctl
+.\csctl.exe
 *.exe
 *.dll
 *.so

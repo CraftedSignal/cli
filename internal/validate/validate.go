@@ -54,9 +54,26 @@ func (e ValidationError) String() string {
 	return fmt.Sprintf("%s: %s: %s", loc, e.Field, e.Message)
 }
 
-// Result holds all validation errors for a set of rules.
+// ValidationWarning represents a non-blocking validation note.
+type ValidationWarning struct {
+	File    string
+	Title   string
+	Field   string
+	Message string
+}
+
+func (w ValidationWarning) String() string {
+	loc := w.File
+	if loc == "" {
+		loc = w.Title
+	}
+	return fmt.Sprintf("%s: %s: %s", loc, w.Field, w.Message)
+}
+
+// Result holds all validation errors and warnings for a set of rules.
 type Result struct {
-	Errors []ValidationError
+	Errors   []ValidationError
+	Warnings []ValidationWarning
 }
 
 // Valid returns true if no validation errors were found.
@@ -66,6 +83,12 @@ func (r *Result) Valid() bool {
 
 func (r *Result) add(file, title, field, msg string) {
 	r.Errors = append(r.Errors, ValidationError{
+		File: file, Title: title, Field: field, Message: msg,
+	})
+}
+
+func (r *Result) addWarning(file, title, field, msg string) {
+	r.Warnings = append(r.Warnings, ValidationWarning{
 		File: file, Title: title, Field: field, Message: msg,
 	})
 }
@@ -142,6 +165,7 @@ func parseQuery(res *Result, query, platform, file, title string) {
 	case "splunk", "spl":
 		result := spl.ExtractConditions(query)
 		parseErrors = result.Errors
+		addSPLWarnings(res, result, query, file, title)
 	case "sentinel", "kql":
 		result := kql.ExtractConditions(query)
 		parseErrors = result.Errors
@@ -155,6 +179,31 @@ func parseQuery(res *Result, query, platform, file, title string) {
 
 	for _, e := range parseErrors {
 		res.add(file, title, "query", fmt.Sprintf("parse error: %s", e))
+	}
+}
+
+// addSPLWarnings adds non-blocking warnings based on SPL parse results.
+func addSPLWarnings(res *Result, result *spl.ParseResult, query, file, title string) {
+	// Macro detection (backtick syntax — can't validate locally)
+	if strings.Contains(query, "`") {
+		res.addWarning(file, title, "query", "contains macros (backtick syntax) — cannot validate locally")
+	}
+
+	// Join/append usage
+	for _, cmd := range result.Commands {
+		if cmd == "join" || cmd == "append" {
+			res.addWarning(file, title, "query", fmt.Sprintf("uses %s command — may impact test generation accuracy", cmd))
+		}
+	}
+
+	// Datamodel reference
+	if dm, ok := result.ComputedFields["_datamodel"]; ok {
+		res.addWarning(file, title, "query", fmt.Sprintf("references datamodel %q", dm))
+	}
+
+	// High pipeline complexity
+	if len(result.Commands) > 10 {
+		res.addWarning(file, title, "query", fmt.Sprintf("high pipeline complexity (%d commands)", len(result.Commands)))
 	}
 }
 

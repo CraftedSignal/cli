@@ -81,10 +81,11 @@ type SyncStatusResponse struct {
 
 // ImportRequest is the request for import endpoint.
 type ImportRequest struct {
-	Rules   []schema.Detection `json:"rules"`
-	Message string             `json:"message"`
-	Mode    string             `json:"mode"`
-	Atomic  *bool              `json:"atomic,omitempty"`
+	Rules     []schema.Detection `json:"rules"`
+	Message   string             `json:"message"`
+	Mode      string             `json:"mode"`
+	Atomic    *bool              `json:"atomic,omitempty"`
+	SkipTests bool               `json:"skip_tests,omitempty"`
 }
 
 // ImportResult represents a single import result.
@@ -252,12 +253,13 @@ func (c *Client) Export(group string) ([]schema.Detection, error) {
 
 // Import sends rules to the platform.
 // If atomic is true (default), the entire import is wrapped in a transaction and rolled back on any error.
-func (c *Client) Import(rules []schema.Detection, message, mode string, atomic bool) (*ImportResponse, error) {
+func (c *Client) Import(rules []schema.Detection, message, mode string, atomic, skipTests bool) (*ImportResponse, error) {
 	req := ImportRequest{
-		Rules:   rules,
-		Message: message,
-		Mode:    mode,
-		Atomic:  &atomic,
+		Rules:     rules,
+		Message:   message,
+		Mode:      mode,
+		Atomic:    &atomic,
+		SkipTests: skipTests,
 	}
 
 	var resp *http.Response
@@ -278,6 +280,10 @@ func (c *Client) Import(rules []schema.Detection, message, mode string, atomic b
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("authentication failed (status %d)", resp.StatusCode)
+	}
+
 	if resp.StatusCode >= 500 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("server error %d: %s", resp.StatusCode, string(body))
@@ -294,6 +300,167 @@ func (c *Client) Import(rules []schema.Detection, message, mode string, atomic b
 	}
 
 	result.StatusCode = resp.StatusCode
+	return &result, nil
+}
+
+// RunTestsRequest is the request for POST /api/v1/detections/test.
+type RunTestsRequest struct {
+	DetectionIDs []string `json:"detection_ids"`
+}
+
+// RunTestsResult represents the test trigger result for a single detection.
+type RunTestsResult struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Action     string `json:"action"` // "started", "skipped", "error"
+	WorkflowID string `json:"workflow_id,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// RunTestsResponse is the response for POST /api/v1/detections/test.
+type RunTestsResponse struct {
+	Results []RunTestsResult `json:"results"`
+	Started int              `json:"started"`
+	Skipped int              `json:"skipped"`
+	Errors  int              `json:"errors"`
+}
+
+// RunTests triggers test execution for the given detection IDs.
+func (c *Client) RunTests(detectionIDs []string) (*RunTestsResponse, error) {
+	req := RunTestsRequest{DetectionIDs: detectionIDs}
+
+	resp, err := c.do("POST", "/api/v1/detections/test", req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("test request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response (status %d): %w", resp.StatusCode, err)
+	}
+
+	var result RunTestsResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse test data (status %d): %w", resp.StatusCode, err)
+	}
+
+	return &result, nil
+}
+
+// TestFailure represents a single failed test case.
+type TestFailure struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"` // positive, negative
+	Error   string `json:"error,omitempty"`
+	Matches int    `json:"matches,omitempty"`
+}
+
+// TestStatusResult represents the test status of a single detection.
+type TestStatusResult struct {
+	ID          string        `json:"id"`
+	Title       string        `json:"title"`
+	TestStatus  string        `json:"test_status"` // no_tests, passing, failing, error, pending
+	FailedTests []TestFailure `json:"failed_tests,omitempty"`
+}
+
+// TestStatusResponse is the response for GET /api/v1/detections/test-status.
+type TestStatusResponse struct {
+	Results []TestStatusResult `json:"results"`
+	Passed  int                `json:"passed"`
+	Failed  int                `json:"failed"`
+	Pending int                `json:"pending"`
+}
+
+// GetTestStatus polls the test status for the given detection IDs.
+func (c *Client) GetTestStatus(detectionIDs []string) (*TestStatusResponse, error) {
+	ids := ""
+	for i, id := range detectionIDs {
+		if i > 0 {
+			ids += ","
+		}
+		ids += id
+	}
+
+	resp, err := c.do("GET", "/api/v1/detections/test-status?ids="+ids, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("test status request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response (status %d): %w", resp.StatusCode, err)
+	}
+
+	var result TestStatusResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse test status (status %d): %w", resp.StatusCode, err)
+	}
+
+	return &result, nil
+}
+
+// DeployRequest is the request for POST /api/v1/detections/deploy.
+type DeployRequest struct {
+	DetectionIDs  []string `json:"detection_ids"`
+	OverrideTests bool     `json:"override_tests"`
+}
+
+// DeployResult represents the result of deploying a single detection.
+type DeployResult struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Action string `json:"action"` // "deployed", "error"
+	Error  string `json:"error,omitempty"`
+}
+
+// DeployResponse is the response for POST /api/v1/detections/deploy.
+type DeployResponse struct {
+	Results  []DeployResult `json:"results"`
+	Deployed int            `json:"deployed"`
+	Failed   int            `json:"failed"`
+}
+
+// Deploy triggers deployment for the given detection IDs.
+func (c *Client) Deploy(detectionIDs []string, overrideTests bool) (*DeployResponse, error) {
+	req := DeployRequest{DetectionIDs: detectionIDs, OverrideTests: overrideTests}
+
+	resp, err := c.do("POST", "/api/v1/detections/deploy", req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("deploy failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response (status %d): %w", resp.StatusCode, err)
+	}
+
+	if apiResp.Error != nil {
+		return nil, fmt.Errorf("deploy failed: %s", apiResp.Error.Message)
+	}
+
+	var result DeployResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse deploy data (status %d): %w", resp.StatusCode, err)
+	}
+
 	return &result, nil
 }
 

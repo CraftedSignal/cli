@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,18 +21,40 @@ type LoadedRule struct {
 	Hash     string
 }
 
+// LoadError represents a file that failed to load.
+type LoadError struct {
+	Path string
+	Err  error
+}
+
+func (e LoadError) Error() string {
+	return fmt.Sprintf("%s: %v", e.Path, e.Err)
+}
+
 // LoadAll loads all YAML files from a directory recursively.
 func LoadAll(root string) ([]LoadedRule, error) {
+	rules, errors := LoadAllLenient(root)
+	if len(errors) > 0 {
+		return nil, errors[0]
+	}
+	return rules, nil
+}
+
+// LoadAllLenient loads all YAML files, returning successfully loaded rules
+// and a list of errors for files that failed to load.
+func LoadAllLenient(root string) ([]LoadedRule, []LoadError) {
 	var rules []LoadedRule
+	var loadErrors []LoadError
 
 	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve root path: %w", err)
+		return nil, []LoadError{{Path: root, Err: fmt.Errorf("failed to resolve root path: %w", err)}}
 	}
 
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			loadErrors = append(loadErrors, LoadError{Path: path, Err: err})
+			return nil
 		}
 
 		// Skip symlinks to prevent path traversal
@@ -46,10 +69,12 @@ func LoadAll(root string) ([]LoadedRule, error) {
 		// Verify resolved path stays within root directory (resolve symlinks in path components)
 		absPath, err := filepath.EvalSymlinks(path)
 		if err != nil {
-			return fmt.Errorf("failed to resolve path: %w", err)
+			loadErrors = append(loadErrors, LoadError{Path: path, Err: fmt.Errorf("failed to resolve path: %w", err)})
+			return nil
 		}
 		if !strings.HasPrefix(absPath, absRoot+string(filepath.Separator)) && absPath != absRoot {
-			return fmt.Errorf("path traversal detected: %s", path)
+			loadErrors = append(loadErrors, LoadError{Path: path, Err: fmt.Errorf("path traversal detected")})
+			return nil
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
@@ -59,14 +84,15 @@ func LoadAll(root string) ([]LoadedRule, error) {
 
 		loaded, err := LoadFile(path, root)
 		if err != nil {
-			return fmt.Errorf("failed to load %s: %w", path, err)
+			loadErrors = append(loadErrors, LoadError{Path: path, Err: err})
+			return nil
 		}
 
 		rules = append(rules, loaded...)
 		return nil
 	})
 
-	return rules, err
+	return rules, loadErrors
 }
 
 // LoadFile loads rules from a single YAML file.
@@ -86,10 +112,15 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 		// Merge folder groups with explicit groups
 		single.Groups = mergeGroups(folderGroups, single.Groups)
 
+		hash, err := ComputeHash(single)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute hash for %s: %w", path, err)
+		}
+
 		return []LoadedRule{{
 			Rule:     single,
 			FilePath: path,
-			Hash:     ComputeHash(single),
+			Hash:     hash,
 		}}, nil
 	}
 
@@ -99,10 +130,14 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 		var rules []LoadedRule
 		for _, r := range multiple {
 			r.Groups = mergeGroups(folderGroups, r.Groups)
+			hash, err := ComputeHash(r)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute hash for %s: %w", path, err)
+			}
 			rules = append(rules, LoadedRule{
 				Rule:     r,
 				FilePath: path,
-				Hash:     ComputeHash(r),
+				Hash:     hash,
 			})
 		}
 		return rules, nil
@@ -347,21 +382,74 @@ func mergeGroups(folder, explicit []string) []string {
 }
 
 // ComputeHash computes a hash of the detection's sync-relevant fields.
-func ComputeHash(r schema.Detection) string {
-	tactics := strings.Join(normalizeSlice(r.Tactics), ",")
-	techniques := strings.Join(normalizeSlice(r.Techniques), ",")
-	tags := strings.Join(normalizeSlice(r.Tags), ",")
-
-	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+// This must match the backend's computeDetectionHash function.
+func ComputeHash(r schema.Detection) (string, error) {
+	testsHash := computeTestsHash(r.Tests)
+	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%v|%s|%s",
 		r.Title, r.Description, r.Platform, r.Query, r.Severity, r.Kind,
-		r.Frequency, r.Period, tactics, techniques, tags)
+		r.Frequency, r.Period, sortedSlice(r.Tactics), sortedSlice(r.Techniques),
+		sortedSlice(r.Tags), r.Enabled, sortedSlice(r.Groups), testsHash)
 	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
+	return hex.EncodeToString(hash[:]), nil
 }
 
-func normalizeSlice(s []string) []string {
-	if s == nil {
-		return []string{}
+// sortedSlice returns a sorted copy of the slice as a joined string.
+func sortedSlice(s []string) string {
+	if len(s) == 0 {
+		return ""
 	}
-	return s
+	sorted := make([]string, len(s))
+	copy(sorted, s)
+	sort.Strings(sorted)
+	return strings.Join(sorted, ",")
+}
+
+// computeTestsHash creates a deterministic hash of tests.
+func computeTestsHash(tests *schema.Tests) string {
+	if tests == nil {
+		return ""
+	}
+	var parts []string
+	for _, t := range tests.Positive {
+		parts = append(parts, serializeTest("positive", t))
+	}
+	for _, t := range tests.Negative {
+		parts = append(parts, serializeTest("negative", t))
+	}
+	// Sort for deterministic ordering
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
+}
+
+// serializeTest converts a test to a deterministic string representation.
+func serializeTest(testType string, t schema.Test) string {
+	// For data, serialize with sorted keys
+	dataStr := serializeTestData(t.Data)
+	return fmt.Sprintf("%s:%s:%s:%s:%s", testType, t.Name, t.Description, dataStr, t.JSON)
+}
+
+// serializeTestData converts test data to a deterministic string.
+func serializeTestData(data []map[string]interface{}) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var entries []string
+	for _, entry := range data {
+		entries = append(entries, serializeMap(entry))
+	}
+	return strings.Join(entries, ",")
+}
+
+// serializeMap converts a map to a deterministic string with sorted keys.
+func serializeMap(m map[string]interface{}) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, m[k]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
