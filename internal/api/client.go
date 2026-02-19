@@ -464,6 +464,78 @@ func (c *Client) Deploy(detectionIDs []string, overrideTests bool) (*DeployRespo
 	return &result, nil
 }
 
+// GenerateRequest is the request body for POST /api/v1/detections/generate.
+type GenerateRequest struct {
+	Description string `json:"description"`
+	Platform    string `json:"platform"`
+	SigmaYAML   string `json:"sigma_yaml,omitempty"`
+}
+
+// GenerateStartResponse is the response for starting generation.
+type GenerateStartResponse struct {
+	WorkflowID string           `json:"workflow_id,omitempty"`
+	Status     string           `json:"status"`
+	Rules      []schema.Detection `json:"rules,omitempty"`
+}
+
+// GeneratePollResponse is the response for polling generation status.
+type GeneratePollResponse struct {
+	Status   string             `json:"status"`
+	Progress string             `json:"progress,omitempty"`
+	Error    string             `json:"error,omitempty"`
+	Rules    []schema.Detection `json:"rules,omitempty"`
+}
+
+// StartGenerate starts AI-powered rule generation.
+func (c *Client) StartGenerate(req GenerateRequest) (*GenerateStartResponse, error) {
+	resp, err := c.do("POST", "/api/v1/detections/generate", req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("generate failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var result GenerateStartResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse data: %w", err)
+	}
+	return &result, nil
+}
+
+// PollGenerate polls for generation completion.
+func (c *Client) PollGenerate(workflowID string) (*GeneratePollResponse, error) {
+	resp, err := c.do("GET", "/api/v1/detections/generate/"+workflowID, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("poll failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var result GeneratePollResponse
+	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse data: %w", err)
+	}
+	return &result, nil
+}
+
 func parseRetryAfter(header string, fallback time.Duration) time.Duration {
 	if header == "" {
 		return fallback

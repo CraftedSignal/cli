@@ -21,6 +21,15 @@ const (
 	ExitConflict = 2
 )
 
+// Build-time variables set via ldflags.
+// GoReleaser sets these automatically; for dev builds use:
+//
+//	go build -ldflags "-X main.version=dev -X main.commit=$(git rev-parse --short HEAD)" ./cmd/csctl/
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
 var (
 	logger *slog.Logger
 	errOut io.Writer = os.Stderr
@@ -50,6 +59,8 @@ Commands:
   diff      Show differences between local and platform
   init      Initialize detections directory structure
   auth      Check authentication status
+  library   Library management (index generation, signing)
+  generate  Generate detection rules from threat intelligence
 
 Global Flags:
 `)
@@ -140,6 +151,13 @@ Examples:
 	// Execute command
 	var exitCode int
 	switch cmd {
+	case "version":
+		if version == "dev" {
+			fmt.Printf("csctl %s (commit: %s)\n", version, commit)
+		} else {
+			fmt.Printf("csctl %s\n", version)
+		}
+		os.Exit(ExitSuccess)
 	case "push":
 		exitCode = cmdPush(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "pull":
@@ -154,6 +172,10 @@ Examples:
 		exitCode = cmdInit(url, token, cmdArgs, clientOpts, *path)
 	case "auth":
 		exitCode = cmdAuth(url, token, cmdArgs, clientOpts)
+	case "library":
+		exitCode = cmdLibrary(cmdArgs)
+	case "generate":
+		exitCode = cmdGenerate(url, token, cmdArgs, cfg, clientOpts, *path)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		flag.Usage()
