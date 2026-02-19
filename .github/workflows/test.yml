@@ -1,0 +1,73 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Get Go version
+        id: vars
+        run: |
+          goVersion=$(grep '^FROM golang' .github/go/Dockerfile | cut -d ':' -f 2 | cut -d '-' -f 1)
+          echo "go_version=${goVersion}" >> $GITHUB_OUTPUT
+          echo "Using Go version ${goVersion}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.vars.outputs.go_version }}
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Get Go version
+        id: vars
+        run: |
+          goVersion=$(grep '^FROM golang' .github/go/Dockerfile | cut -d ':' -f 2 | cut -d '-' -f 1)
+          echo "go_version=${goVersion}" >> $GITHUB_OUTPUT
+          echo "Using Go version ${goVersion}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.vars.outputs.go_version }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
