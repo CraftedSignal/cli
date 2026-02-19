@@ -2,8 +2,12 @@ github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYW
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
 github.com/craftedsignal/kql-parser v0.3.0 h1:Uo35yyBrSRvy6CjP5VmXMb1ouY2uW9TsuwitRLPlURE=
 github.com/craftedsignal/kql-parser v0.3.0/go.mod h1:RpYkgpfrJglvRwep11K+DIv/bltMHH1ZW27fA3mhs6I=
+github.com/craftedsignal/kql-parser v0.4.1 h1:8xkSUg0oy21MueuI80K1XfouanIfNv5UbwLtHq4qLWA=
+github.com/craftedsignal/kql-parser v0.4.1/go.mod h1:RpYkgpfrJglvRwep11K+DIv/bltMHH1ZW27fA3mhs6I=
 github.com/craftedsignal/spl-parser v0.7.0 h1:39PgNb/DLwSPHn/gCCNmCBT/S37db2bFVF252oK0XtA=
 github.com/craftedsignal/spl-parser v0.7.0/go.mod h1:4p3m0KbSM5oOTlQJEmQZQokYFkOhpjSPaoBmMNdWXbc=
+github.com/craftedsignal/spl-parser v0.8.1 h1:HzHe/NQPnvpx/vXpQB+gpDy206tulAxZXHxHAPEKesg=
+github.com/craftedsignal/spl-parser v0.8.1/go.mod h1:4p3m0KbSM5oOTlQJEmQZQokYFkOhpjSPaoBmMNdWXbc=
 golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=
 golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842/go.mod h1:XtvwrStGgqGPLc4cjQfWqZHG1YFdYs6swckp8vpsjnc=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
