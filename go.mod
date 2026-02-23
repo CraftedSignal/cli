@@ -4,8 +4,8 @@ go 1.25.6
 
 require (
 	github.com/craftedsignal/kql-parser v0.4.1
-	github.com/craftedsignal/leql-parser v0.4.0
-	github.com/craftedsignal/spl-parser v0.8.1
+	github.com/craftedsignal/leql-parser v0.6.0
+	github.com/craftedsignal/spl-parser v0.9.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
