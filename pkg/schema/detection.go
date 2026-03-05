@@ -18,7 +18,15 @@ type Detection struct {
 	Techniques  []string `yaml:"techniques,omitempty" json:"techniques,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Groups      []string `yaml:"groups,omitempty" json:"groups,omitempty"`
-	Tests       *Tests   `yaml:"tests,omitempty" json:"tests,omitempty"`
+	Tests       *Tests              `yaml:"tests,omitempty" json:"tests,omitempty"`
+	Simulations []SimulationBinding `yaml:"simulations,omitempty" json:"simulations,omitempty"`
+}
+
+// SimulationBinding declares an explicit simulation binding for a detection rule.
+type SimulationBinding struct {
+	Technique string   `yaml:"technique" json:"technique"`
+	Adapters  []string `yaml:"adapters,omitempty" json:"adapters,omitempty"`
+	Expected  bool     `yaml:"expected" json:"expected"`
 }
 
 // Tests contains test cases for validating detection rules.
