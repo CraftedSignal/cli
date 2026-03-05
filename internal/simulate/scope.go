@@ -3,6 +3,7 @@ package simulate
 import (
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -70,11 +71,11 @@ func (s *ScopeConfig) IsAllowed(techniqueID, adapterName string) bool {
 		return true
 	}
 
-	if len(s.Scope.Techniques) > 0 && !contains(s.Scope.Techniques, techniqueID) {
+	if len(s.Scope.Techniques) > 0 && !slices.Contains(s.Scope.Techniques, techniqueID) {
 		return false
 	}
 
-	if len(s.Scope.Adapters) > 0 && !contains(s.Scope.Adapters, adapterName) {
+	if len(s.Scope.Adapters) > 0 && !slices.Contains(s.Scope.Adapters, adapterName) {
 		return false
 	}
 
@@ -104,11 +105,3 @@ func (s *ScopeConfig) GetTarget(name string) *Target {
 	return nil
 }
 
-func contains(ss []string, v string) bool {
-	for _, s := range ss {
-		if s == v {
-			return true
-		}
-	}
-	return false
-}
