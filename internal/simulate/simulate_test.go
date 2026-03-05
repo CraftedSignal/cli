@@ -2,6 +2,7 @@ package simulate
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 )
@@ -24,17 +25,8 @@ func (s *stubAdapter) List(f Filter) ([]Technique, error) {
 		if f.TechniqueID != "" && t.ID != f.TechniqueID {
 			continue
 		}
-		if f.Platform != "" {
-			found := false
-			for _, p := range t.Platforms {
-				if p == f.Platform {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if f.Platform != "" && !slices.Contains(t.Platforms, f.Platform) {
+			continue
 		}
 		out = append(out, t)
 	}
