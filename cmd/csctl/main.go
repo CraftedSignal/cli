@@ -61,6 +61,7 @@ Commands:
   auth      Check authentication status
   library   Library management (index generation, signing)
   generate  Generate detection rules from threat intelligence
+  simulate  Run attack simulations and verify detection coverage
 
 Global Flags:
 `)
@@ -176,6 +177,8 @@ Examples:
 		exitCode = cmdLibrary(cmdArgs)
 	case "generate":
 		exitCode = cmdGenerate(url, token, cmdArgs, cfg, clientOpts, *path)
+	case "simulate":
+		exitCode = cmdSimulate(url, token, cmdArgs, cfg, clientOpts, *path)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		flag.Usage()
