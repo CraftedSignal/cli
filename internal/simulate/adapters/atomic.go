@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/craftedsignal/cli/internal/simulate"
@@ -98,31 +97,3 @@ func (a *atomicAdapter) Cleanup(ctx context.Context, plan *simulate.ExecutionPla
 	return cmd.Run()
 }
 
-// containsPlatform checks whether a slice contains the given platform.
-func containsPlatform(platforms []simulate.Platform, p simulate.Platform) bool {
-	for _, pl := range platforms {
-		if pl == p {
-			return true
-		}
-	}
-	return false
-}
-
-// containsExecMode checks whether a slice contains the given exec mode.
-func containsExecMode(modes []simulate.ExecMode, m simulate.ExecMode) bool {
-	for _, mode := range modes {
-		if mode == m {
-			return true
-		}
-	}
-	return false
-}
-
-// splitCommand is a helper to split a command preview into binary and args.
-func splitCommand(preview string) (string, []string) {
-	parts := strings.Fields(preview)
-	if len(parts) == 0 {
-		return "", nil
-	}
-	return parts[0], parts[1:]
-}

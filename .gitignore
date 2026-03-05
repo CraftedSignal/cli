@@ -32,3 +32,4 @@ dist/
 *.lock
 detections/
 node_modules/
+.claude/

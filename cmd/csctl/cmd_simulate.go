@@ -451,7 +451,7 @@ func pollVerification(client *api.Client, runID uint64) *api.SimulationRun {
 	const maxPolls = 24 // 2 minutes at 5s intervals
 	const pollInterval = 5 * time.Second
 
-	for i := 0; i < maxPolls; i++ {
+	for range maxPolls {
 		time.Sleep(pollInterval)
 
 		run, err := client.PollVerification(runID)
