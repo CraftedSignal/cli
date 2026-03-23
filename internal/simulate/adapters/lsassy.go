@@ -54,6 +54,11 @@ func (l *lsassyAdapter) Plan(techniqueID string) (*simulate.ExecutionPlan, error
 		ExecMode:       simulate.Local,
 		CommandPreview: "lsassy -d <domain> -u <user> -p <pass> <target>",
 		EstimatedLogs:  []string{"Security", "Sysmon"},
+		Observables: []simulate.Observable{
+			{Field: "Image", Value: "*lsassy*"},
+			{Field: "TargetImage", Value: "*lsass.exe"},
+			{Field: "GrantedAccess", Value: "0x1010"},
+		},
 	}, nil
 }
 

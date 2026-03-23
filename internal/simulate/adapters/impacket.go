@@ -61,12 +61,35 @@ func (i *impacketAdapter) Plan(techniqueID string) (*simulate.ExecutionPlan, err
 		return nil, fmt.Errorf("technique %s not supported by impacket adapter", techniqueID)
 	}
 
-	return &simulate.ExecutionPlan{
+	plan := &simulate.ExecutionPlan{
 		TechniqueID:    techniqueID,
 		AdapterName:    i.Name(),
 		ExecMode:       simulate.Local,
 		CommandPreview: fmt.Sprintf("%s <domain>/<user>:<pass>@<target>", binary),
-	}, nil
+	}
+	switch techniqueID {
+	case "T1003.003":
+		plan.Observables = []simulate.Observable{
+			{Field: "CommandLine", Value: "*secretsdump*"},
+			{Field: "TargetFilename", Value: "*ntds.dit*"},
+		}
+	case "T1569.002":
+		plan.Observables = []simulate.Observable{
+			{Field: "CommandLine", Value: "*psexec*"},
+			{Field: "Image", Value: "*psexec*"},
+			{Field: "ServiceName", Value: "*"},
+		}
+	case "T1047":
+		plan.Observables = []simulate.Observable{
+			{Field: "CommandLine", Value: "*wmiexec*"},
+			{Field: "Image", Value: "*wmiprvse.exe"},
+		}
+	case "T1021.002":
+		plan.Observables = []simulate.Observable{
+			{Field: "CommandLine", Value: "*smbexec*"},
+		}
+	}
+	return plan, nil
 }
 
 func (i *impacketAdapter) Execute(ctx context.Context, plan *simulate.ExecutionPlan) (*simulate.ExecutionResult, error) {
