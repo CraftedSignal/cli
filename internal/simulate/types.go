@@ -81,7 +81,16 @@ type ExecutionPlan struct {
 	Target         string   // host, account, or empty for local
 	ExecMode       ExecMode
 	CommandPreview string   // human-readable preview of what will run
-	EstimatedLogs  []string // log sources expected to fire
+	EstimatedLogs  []string      // log sources expected to fire
+	Observables    []Observable  // expected telemetry in Sigma field vocabulary
+}
+
+// Observable describes a telemetry artifact produced by a simulation technique.
+// Field uses Sigma canonical field names (e.g., "Image", "CommandLine").
+// Value uses glob patterns (e.g., "*mimikatz.exe*").
+type Observable struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 // ExecutionResult captures the outcome of a technique execution.

@@ -75,12 +75,36 @@ func (m *mimikatzAdapter) Plan(techniqueID string) (*simulate.ExecutionPlan, err
 		}
 	}
 
-	return &simulate.ExecutionPlan{
+	plan := &simulate.ExecutionPlan{
 		TechniqueID:    techniqueID,
 		AdapterName:    m.Name(),
 		ExecMode:       mode,
 		CommandPreview: fmt.Sprintf("mimikatz.exe \"%s\"", mimiCmd),
-	}, nil
+	}
+	switch techniqueID {
+	case "T1003.001":
+		plan.Observables = []simulate.Observable{
+			{Field: "Image", Value: "*mimikatz*"},
+			{Field: "CommandLine", Value: "*sekurlsa::logonpasswords*"},
+			{Field: "TargetImage", Value: "*lsass.exe"},
+		}
+	case "T1003.006":
+		plan.Observables = []simulate.Observable{
+			{Field: "Image", Value: "*mimikatz*"},
+			{Field: "CommandLine", Value: "*lsadump::dcsync*"},
+		}
+	case "T1558.001":
+		plan.Observables = []simulate.Observable{
+			{Field: "Image", Value: "*mimikatz*"},
+			{Field: "CommandLine", Value: "*kerberos::golden*"},
+		}
+	case "T1558.003":
+		plan.Observables = []simulate.Observable{
+			{Field: "Image", Value: "*mimikatz*"},
+			{Field: "CommandLine", Value: "*kerberos::list*"},
+		}
+	}
+	return plan, nil
 }
 
 func (m *mimikatzAdapter) Execute(ctx context.Context, plan *simulate.ExecutionPlan) (*simulate.ExecutionResult, error) {

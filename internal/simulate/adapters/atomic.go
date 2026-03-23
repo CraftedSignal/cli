@@ -56,14 +56,75 @@ func (a *atomicAdapter) List(filter simulate.Filter) ([]simulate.Technique, erro
 
 func (a *atomicAdapter) Plan(techniqueID string) (*simulate.ExecutionPlan, error) {
 	for _, t := range atomicTechniques {
-		if t.ID == techniqueID {
-			return &simulate.ExecutionPlan{
-				TechniqueID:    techniqueID,
-				AdapterName:    a.Name(),
-				ExecMode:       t.ExecModes[0],
-				CommandPreview: fmt.Sprintf("atomic-go-team run %s", techniqueID),
-			}, nil
+		if t.ID != techniqueID {
+			continue
 		}
+		plan := &simulate.ExecutionPlan{
+			TechniqueID:    techniqueID,
+			AdapterName:    a.Name(),
+			ExecMode:       t.ExecModes[0],
+			CommandPreview: fmt.Sprintf("atomic-go-team run %s", techniqueID),
+		}
+		switch techniqueID {
+		case "T1003.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "TargetImage", Value: "*lsass.exe"},
+				{Field: "GrantedAccess", Value: "0x1010"},
+			}
+		case "T1003.003":
+			plan.Observables = []simulate.Observable{
+				{Field: "CommandLine", Value: "*ntdsutil*"},
+				{Field: "TargetFilename", Value: "*ntds.dit*"},
+			}
+		case "T1059.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "Image", Value: "*powershell.exe"},
+				{Field: "CommandLine", Value: "*powershell*"},
+			}
+		case "T1059.003":
+			plan.Observables = []simulate.Observable{
+				{Field: "Image", Value: "*cmd.exe"},
+				{Field: "CommandLine", Value: "*cmd*"},
+			}
+		case "T1053.005":
+			plan.Observables = []simulate.Observable{
+				{Field: "Image", Value: "*schtasks.exe"},
+				{Field: "CommandLine", Value: "*schtasks*/create*"},
+			}
+		case "T1547.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "TargetObject", Value: `*\CurrentVersion\Run*`},
+			}
+		case "T1562.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "CommandLine", Value: "*Set-MpPreference*DisableRealtimeMonitoring*"},
+			}
+		case "T1070.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "Image", Value: "*wevtutil.exe"},
+				{Field: "CommandLine", Value: "*wevtutil*cl*"},
+			}
+		case "T1105":
+			plan.Observables = []simulate.Observable{
+				{Field: "CommandLine", Value: "*certutil*urlcache*"},
+			}
+		case "T1078.004":
+			plan.Observables = []simulate.Observable{
+				{Field: "EventID", Value: "ConsoleLogin"},
+			}
+		case "T1136.001":
+			plan.Observables = []simulate.Observable{
+				{Field: "CommandLine", Value: "*net*user*/add*"},
+				{Field: "TargetUserName", Value: "*"},
+				{Field: "EventID", Value: "4720"},
+			}
+		case "T1218.011":
+			plan.Observables = []simulate.Observable{
+				{Field: "Image", Value: "*rundll32.exe"},
+				{Field: "CommandLine", Value: "*rundll32*"},
+			}
+		}
+		return plan, nil
 	}
 	return nil, fmt.Errorf("technique %s not found in atomic catalog", techniqueID)
 }

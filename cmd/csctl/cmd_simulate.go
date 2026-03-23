@@ -4,18 +4,22 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strconv"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/simulate"
+	"github.com/craftedsignal/cli/internal/simulate/adapters"
 )
 
-// newDefaultRegistry returns an empty registry. Adapters are registered in later tasks.
+// newDefaultRegistry returns a registry with all built-in adapters registered.
 func newDefaultRegistry() *simulate.Registry {
-	return simulate.NewRegistry()
+	reg := simulate.NewRegistry()
+	adapters.RegisterAll(reg)
+	return reg
 }
 
 func cmdSimulate(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
@@ -170,6 +174,7 @@ func cmdSimulatePlan(reg *simulate.Registry, args []string) int {
 func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, clientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("simulate run", flag.ExitOnError)
 	live := fs.Bool("live", false, "Execute the simulation (default is dry-run)")
+	debug := fs.Bool("debug", false, "Show detailed execution output (stdout/stderr)")
 	allowAll := fs.Bool("allow-all", false, "Override scope restrictions")
 	adapterFlag := fs.String("adapter", "", "Adapter to use")
 	targetFlag := fs.String("target", "", "Target host or environment")
@@ -239,6 +244,11 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 		return ExitError
 	}
 
+	if *debug {
+		printPlan(plan)
+		fmt.Println()
+	}
+
 	fmt.Printf("Executing %s via %s...\n", techniqueID, adapter.Name())
 	ctx, cancel := context.WithTimeout(context.Background(), *timeoutFlag)
 	defer cancel()
@@ -252,12 +262,23 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 	fmt.Printf("Execution completed (exit code %d, duration %s)\n",
 		result.ExitCode, result.EndTime.Sub(result.StartTime).Round(time.Second))
 
+	if *debug && result.Stdout != "" {
+		fmt.Printf("\n--- stdout ---\n%s\n", result.Stdout)
+	}
 	if result.Stderr != "" {
-		_, _ = fmt.Fprintf(errOut, "Stderr:\n%s\n", result.Stderr)
+		if *debug {
+			fmt.Printf("--- stderr ---\n")
+		}
+		_, _ = fmt.Fprintf(errOut, "%s\n", result.Stderr)
 	}
 
 	// Report to platform
-	if url != "" && token != "" && !*skipCorrelation {
+	if url == "" || token == "" {
+		if !*skipCorrelation {
+			fmt.Println("\nSkipping platform reporting: no URL/token configured")
+			fmt.Println("Set url in .csctl.yaml and CSCTL_TOKEN to report runs for detection correlation")
+		}
+	} else if !*skipCorrelation {
 		client := api.NewClient(url, token, clientOpts...)
 
 		// Find technique name
@@ -270,20 +291,39 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 			}
 		}
 
-		run, err := client.CreateSimulationRun(api.CreateSimulationRunRequest{
+		// Resolve target for reporting: use the machine hostname for local
+		// execution, or plan.Target for remote modes (SSH, WinRM, cloud API).
+		reportTarget := plan.Target
+		if plan.ExecMode == simulate.Local || reportTarget == "" {
+			if h, err := os.Hostname(); err == nil {
+				reportTarget = h
+			} else {
+				reportTarget = runtime.GOOS + "/" + runtime.GOARCH
+			}
+		}
+
+		req := api.CreateSimulationRunRequest{
 			TechniqueID:   techniqueID,
 			TechniqueName: techName,
 			Adapter:       adapter.Name(),
 			ExecMode:      plan.ExecMode.String(),
-			Target:        plan.Target,
+			Target:        reportTarget,
+			OS:            runtime.GOOS + "/" + runtime.GOARCH,
 			StartedAt:     result.StartTime.UTC().Format(time.RFC3339),
 			CompletedAt:   result.EndTime.UTC().Format(time.RFC3339),
 			ExecutionLog:  result.Stdout,
-		})
+		}
+		for _, obs := range plan.Observables {
+			req.Observables = append(req.Observables, struct {
+				Field string `json:"field"`
+				Value string `json:"value"`
+			}{Field: obs.Field, Value: obs.Value})
+		}
+		run, err := client.CreateSimulationRun(req)
 		if err != nil {
 			_, _ = fmt.Fprintf(errOut, "Warning: failed to report run to platform: %v\n", err)
 		} else {
-			fmt.Printf("Reported as run #%d, triggering verification...\n", run.ID)
+			fmt.Printf("Reported as run %s, triggering verification...\n", run.ID)
 
 			if err := client.TriggerVerification(run.ID); err != nil {
 				_, _ = fmt.Fprintf(errOut, "Warning: failed to trigger verification: %v\n", err)
@@ -331,25 +371,19 @@ func cmdSimulateStatus(url, token string, args []string, clientOpts []api.Client
 		return ExitError
 	}
 
-	runID, err := strconv.ParseUint(runIDStr, 10, 64)
-	if err != nil {
-		_, _ = fmt.Fprintf(errOut, "Error: invalid run ID: %s\n", runIDStr)
-		return ExitError
-	}
-
 	if url == "" || token == "" {
 		_, _ = fmt.Fprintln(errOut, "Error: URL and token required (set via .csctl.yaml and CSCTL_TOKEN)")
 		return ExitError
 	}
 
 	client := api.NewClient(url, token, clientOpts...)
-	run, err := client.GetSimulationRun(runID)
+	run, err := client.GetSimulationRun(runIDStr)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
 
-	fmt.Printf("Run #%d: %s (%s)\n", run.ID, run.TechniqueName, run.TechniqueID)
+	fmt.Printf("Run %s: %s (%s)\n", run.ID, run.TechniqueName, run.TechniqueID)
 	fmt.Printf("Adapter: %s\n", run.Adapter)
 	fmt.Printf("Status:  %s\n", run.Status)
 
@@ -413,21 +447,25 @@ func resolveAdapter(reg *simulate.Registry, techniqueID, adapterName string) (si
 	}
 
 	adapters := reg.ForTechnique(techniqueID)
-	switch len(adapters) {
-	case 0:
+	if len(adapters) == 0 {
 		_, _ = fmt.Fprintf(errOut, "Error: no adapters found for technique %s\n", techniqueID)
 		return nil, ExitError
-	case 1:
-		return adapters[0], ExitSuccess
-	default:
-		names := make([]string, len(adapters))
-		for i, a := range adapters {
-			names[i] = a.Name()
-		}
-		_, _ = fmt.Fprintf(errOut, "Error: multiple adapters support %s: %s\n", techniqueID, strings.Join(names, ", "))
-		_, _ = fmt.Fprintln(errOut, "Use --adapter to select one")
-		return nil, ExitError
 	}
+
+	// Prefer the first available adapter.
+	for _, a := range adapters {
+		if a.Available() {
+			return a, ExitSuccess
+		}
+	}
+
+	// Nothing available — show what exists so the user can install one.
+	names := make([]string, len(adapters))
+	for i, a := range adapters {
+		names[i] = a.Name()
+	}
+	_, _ = fmt.Fprintf(errOut, "Error: adapters for %s (%s) are all unavailable\n", techniqueID, strings.Join(names, ", "))
+	return nil, ExitError
 }
 
 // printPlan displays an execution plan in human-readable format.
@@ -447,7 +485,7 @@ func printPlan(plan *simulate.ExecutionPlan) {
 }
 
 // pollVerification polls the platform for verification results.
-func pollVerification(client *api.Client, runID uint64) *api.SimulationRun {
+func pollVerification(client *api.Client, runID string) *api.SimulationRun {
 	const maxPolls = 24 // 2 minutes at 5s intervals
 	const pollInterval = 5 * time.Second
 

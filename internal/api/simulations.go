@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 )
 
 // CreateSimulationRunRequest is the request for creating a simulation run.
@@ -15,14 +14,19 @@ type CreateSimulationRunRequest struct {
 	Adapter       string `json:"adapter"`
 	ExecMode      string `json:"exec_mode"`
 	Target        string `json:"target"`
+	OS            string `json:"os"`
 	StartedAt     string `json:"started_at"`
 	CompletedAt   string `json:"completed_at"`
 	ExecutionLog  string `json:"execution_log"`
+	Observables   []struct {
+		Field string `json:"field"`
+		Value string `json:"value"`
+	} `json:"observables,omitempty"`
 }
 
 // SimulationRun represents a simulation run with optional results.
 type SimulationRun struct {
-	ID            uint64             `json:"id"`
+	ID            string             `json:"id"`
 	TechniqueID   string             `json:"technique_id"`
 	TechniqueName string             `json:"technique_name"`
 	Adapter       string             `json:"adapter"`
@@ -98,8 +102,8 @@ func (c *Client) CreateSimulationRun(req CreateSimulationRunRequest) (*Simulatio
 }
 
 // GetSimulationRun retrieves a single simulation run with its results.
-func (c *Client) GetSimulationRun(runID uint64) (*SimulationRun, error) {
-	resp, err := c.do("GET", "/api/v1/simulations/runs/"+strconv.FormatUint(runID, 10), nil)
+func (c *Client) GetSimulationRun(runID string) (*SimulationRun, error) {
+	resp, err := c.do("GET", "/api/v1/simulations/runs/"+runID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +130,8 @@ func (c *Client) GetSimulationRun(runID uint64) (*SimulationRun, error) {
 }
 
 // TriggerVerification asks the platform to run detection correlation for a simulation run.
-func (c *Client) TriggerVerification(runID uint64) error {
-	resp, err := c.do("POST", "/api/v1/simulations/verify/"+strconv.FormatUint(runID, 10), nil)
+func (c *Client) TriggerVerification(runID string) error {
+	resp, err := c.do("POST", "/api/v1/simulations/verify/"+runID, nil)
 	if err != nil {
 		return err
 	}
@@ -141,8 +145,8 @@ func (c *Client) TriggerVerification(runID uint64) error {
 }
 
 // PollVerification polls for verification completion. Returns the run with updated results.
-func (c *Client) PollVerification(runID uint64) (*SimulationRun, error) {
-	resp, err := c.do("GET", "/api/v1/simulations/verify/"+strconv.FormatUint(runID, 10), nil)
+func (c *Client) PollVerification(runID string) (*SimulationRun, error) {
+	resp, err := c.do("GET", "/api/v1/simulations/verify/"+runID, nil)
 	if err != nil {
 		return nil, err
 	}
