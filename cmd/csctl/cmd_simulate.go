@@ -182,15 +182,55 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 	timeoutFlag := fs.Duration("timeout", 5*time.Minute, "Execution timeout")
 	skipCorrelation := fs.Bool("skip-correlation", false, "Skip detection correlation after execution")
 	cleanupFlag := fs.Bool("cleanup", true, "Run cleanup after execution")
+	ruleFlag := fs.String("rule", "", "Detection rule ID — fetches its techniques and runs them all")
 
 	if err := fs.Parse(args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
 
+	// --rule mode: fetch techniques from the platform and run each one
+	if *ruleFlag != "" {
+		if url == "" || token == "" {
+			_, _ = fmt.Fprintln(errOut, "Error: --rule requires platform credentials (set CSCTL_URL and CSCTL_TOKEN)")
+			return ExitError
+		}
+		client := api.NewClient(url, token, clientOpts...)
+		techniques, err := client.GetDetectionTechniques(*ruleFlag)
+		if err != nil {
+			_, _ = fmt.Fprintf(errOut, "Error: failed to fetch rule techniques: %v\n", err)
+			return ExitError
+		}
+		if len(techniques) == 0 {
+			_, _ = fmt.Fprintln(errOut, "Error: rule has no MITRE techniques tagged")
+			return ExitError
+		}
+		fmt.Printf("Rule has %d technique(s): %v\n", len(techniques), techniques)
+		exitCode := ExitSuccess
+		for _, tid := range techniques {
+			// Rebuild args replacing --rule with the technique ID
+			var runArgs []string
+			for _, a := range args {
+				if a == "--rule" || a == *ruleFlag {
+					continue
+				}
+				if len(a) > 7 && a[:7] == "--rule=" {
+					continue
+				}
+				runArgs = append(runArgs, a)
+			}
+			runArgs = append(runArgs, tid)
+			if code := cmdSimulateRun(url, token, reg, runArgs, clientOpts, rulePath); code != ExitSuccess {
+				exitCode = code
+			}
+		}
+		return exitCode
+	}
+
 	if fs.NArg() == 0 {
 		_, _ = fmt.Fprintln(errOut, "Error: technique ID required")
 		_, _ = fmt.Fprintln(errOut, "Usage: csctl simulate run [flags] <technique-id>")
+		_, _ = fmt.Fprintln(errOut, "       csctl simulate run [flags] --rule <detection-id>")
 		return ExitError
 	}
 	techniqueID := fs.Arg(0)
