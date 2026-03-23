@@ -251,6 +251,31 @@ func (c *Client) Export(group string) ([]schema.Detection, error) {
 	return result, nil
 }
 
+// GetDetectionTechniques fetches the MITRE techniques for a single detection by ID.
+func (c *Client) GetDetectionTechniques(detectionID string) ([]string, error) {
+	resp, err := c.do("GET", "/api/v1/detections/"+url.PathEscape(detectionID)+"/export", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("failed to get detection: %s", string(body))
+	}
+
+	var apiResp APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	var det schema.Detection
+	if err := json.Unmarshal(apiResp.Data, &det); err != nil {
+		return nil, err
+	}
+	return det.Techniques, nil
+}
+
 // Import sends rules to the platform.
 // If atomic is true (default), the entire import is wrapped in a transaction and rolled back on any error.
 func (c *Client) Import(rules []schema.Detection, message, mode string, atomic, skipTests bool) (*ImportResponse, error) {
