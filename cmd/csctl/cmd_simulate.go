@@ -183,6 +183,7 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 	skipCorrelation := fs.Bool("skip-correlation", false, "Skip detection correlation after execution")
 	cleanupFlag := fs.Bool("cleanup", true, "Run cleanup after execution")
 	ruleFlag := fs.String("rule", "", "Detection rule ID — fetches its techniques and runs them all")
+	targetDetectionFlag := fs.String("target-detection", "", "Internal: detection ID to directly correlate with")
 
 	if err := fs.Parse(args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
@@ -208,7 +209,7 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 		fmt.Printf("Rule has %d technique(s): %v\n", len(techniques), techniques)
 		exitCode := ExitSuccess
 		for _, tid := range techniques {
-			// Rebuild args replacing --rule with the technique ID
+			// Rebuild args: strip --rule, inject --target-detection, append technique ID
 			var runArgs []string
 			for _, a := range args {
 				if a == "--rule" || a == *ruleFlag {
@@ -219,7 +220,7 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 				}
 				runArgs = append(runArgs, a)
 			}
-			runArgs = append(runArgs, tid)
+			runArgs = append(runArgs, "--target-detection="+*ruleFlag, tid)
 			if code := cmdSimulateRun(url, token, reg, runArgs, clientOpts, rulePath); code != ExitSuccess {
 				exitCode = code
 			}
@@ -321,6 +322,39 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 	} else if !*skipCorrelation {
 		client := api.NewClient(url, token, clientOpts...)
 
+		// Sync adapter catalog to platform (best-effort, don't block execution)
+		if client != nil {
+			go func() {
+				techniques, err := adapter.List(simulate.Filter{})
+				if err != nil {
+					return
+				}
+				var scenarios []api.ScenarioSync
+				for _, t := range techniques {
+					for _, p := range t.Platforms {
+						modes := make([]string, len(t.ExecModes))
+						for i, m := range t.ExecModes {
+							modes[i] = m.String()
+						}
+						plan, _ := adapter.Plan(t.ID)
+						cmdPreview := ""
+						if plan != nil {
+							cmdPreview = plan.CommandPreview
+						}
+						scenarios = append(scenarios, api.ScenarioSync{
+							TechniqueID:    t.ID,
+							TechniqueName:  t.Name,
+							Adapter:        adapter.Name(),
+							Platform:       string(p),
+							ExecModes:      modes,
+							CommandPreview: cmdPreview,
+						})
+					}
+				}
+				_ = client.SyncScenarios(scenarios)
+			}()
+		}
+
 		// Find technique name
 		techName := techniqueID
 		techs, _ := adapter.List(simulate.Filter{TechniqueID: techniqueID})
@@ -358,6 +392,9 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 				Field string `json:"field"`
 				Value string `json:"value"`
 			}{Field: obs.Field, Value: obs.Value})
+		}
+		if *targetDetectionFlag != "" {
+			req.TargetDetectionID = *targetDetectionFlag
 		}
 		run, err := client.CreateSimulationRun(req)
 		if err != nil {
