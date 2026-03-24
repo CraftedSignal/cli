@@ -18,10 +18,11 @@ type CreateSimulationRunRequest struct {
 	StartedAt     string `json:"started_at"`
 	CompletedAt   string `json:"completed_at"`
 	ExecutionLog  string `json:"execution_log"`
-	Observables   []struct {
+	Observables []struct {
 		Field string `json:"field"`
 		Value string `json:"value"`
 	} `json:"observables,omitempty"`
+	TargetDetectionID string `json:"target_detection_id,omitempty"`
 }
 
 // SimulationRun represents a simulation run with optional results.
@@ -74,6 +75,33 @@ type SimulationGap struct {
 	TechniqueName string `json:"technique_name"`
 	Adapter       string `json:"adapter"`
 	LastRunAt     string `json:"last_run_at"`
+}
+
+// ScenarioSync represents a simulation scenario for catalog sync.
+type ScenarioSync struct {
+	TechniqueID    string   `json:"technique_id"`
+	TechniqueName  string   `json:"technique_name"`
+	Adapter        string   `json:"adapter"`
+	Platform       string   `json:"platform"`
+	ExecModes      []string `json:"exec_modes"`
+	Description    string   `json:"description"`
+	CommandPreview string   `json:"command_preview"`
+}
+
+// SyncScenarios syncs the adapter's scenario catalog to the platform.
+func (c *Client) SyncScenarios(scenarios []ScenarioSync) error {
+	resp, err := c.do("POST", "/api/v1/simulations/scenarios/sync", map[string]any{
+		"scenarios": scenarios,
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("sync scenarios failed (status %d): %s", resp.StatusCode, body)
+	}
+	return nil
 }
 
 // CreateSimulationRun reports a simulation run to the platform and triggers verification.
