@@ -57,6 +57,7 @@ jobs:
         uses: cycjimmy/semantic-release-action@v6
         with:
           semantic_version: 24
+          extends: .github/.releaserc.json
           extra_plugins: |
             conventional-changelog-conventionalcommits
         env:
@@ -79,7 +80,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: latest
+          version: "~> v2"
           args: release --clean --config .github/goreleaser.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
