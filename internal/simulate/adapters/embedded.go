@@ -174,13 +174,15 @@ func executeT1105(ctx context.Context, plan *simulate.ExecutionPlan, stdout *byt
 	var source string
 	resp, err := http.DefaultClient.Do(req)
 	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		f, fErr := os.Create(dest)
 		if fErr != nil {
 			return fmt.Errorf("creating temp file: %w", fErr)
 		}
 		n, err = io.Copy(f, resp.Body)
-		f.Close()
+		if err2 := f.Close(); err2 != nil && err == nil {
+			err = err2
+		}
 		if err != nil {
 			return fmt.Errorf("writing downloaded content: %w", err)
 		}
@@ -188,7 +190,7 @@ func executeT1105(ctx context.Context, plan *simulate.ExecutionPlan, stdout *byt
 	} else {
 		// Fallback: write EICAR string directly
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		if wErr := os.WriteFile(dest, []byte(eicarTestString), 0644); wErr != nil {
 			return fmt.Errorf("writing EICAR test file: %w", wErr)
@@ -211,7 +213,7 @@ func cleanupT1105(plan *simulate.ExecutionPlan) error {
 			return nil
 		}
 		for _, m := range matches {
-			os.Remove(m)
+			_ = os.Remove(m)
 		}
 		return nil
 	}
