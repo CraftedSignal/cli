@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
+func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, rulePath string) int {
 	fs := flag.NewFlagSet("diff", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	filter := fs.String("filter", "", "Filter rules by name or ID (supports * wildcard)")
@@ -32,7 +33,12 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitError
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
+	ctx := context.Background()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: failed to create client: %v\n", err)
+		return ExitError
+	}
 	lf, _ := lockfile.Load()
 
 	allLocalRules, err := internalyaml.LoadAll(path)
@@ -49,7 +55,7 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 		}
 	}
 
-	status, err := client.GetSyncStatus()
+	status, err := client.Detections.GetSyncStatus(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: failed to get sync status: %v\n", err)
 		return ExitError
@@ -62,7 +68,7 @@ func cmdDiff(url, token string, args []string, cfg *config.Config, clientOpts []
 		}
 	}
 
-	platformByID := make(map[string]api.SyncStatusRule)
+	platformByID := make(map[string]craftedsignal.SyncStatusRule)
 	for _, r := range status.Rules {
 		if matchesFilter(r.Title, r.ID, *filter) && matchesGroup(r.Groups, *group) {
 			platformByID[r.ID] = r

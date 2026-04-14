@@ -6,9 +6,8 @@ import (
 
 	kql "github.com/craftedsignal/kql-parser"
 	leql "github.com/craftedsignal/leql-parser"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 	spl "github.com/craftedsignal/spl-parser"
-
-	"github.com/craftedsignal/cli/pkg/schema"
 )
 
 // PlatformConstraints defines limits for a SIEM platform.
@@ -94,7 +93,7 @@ func (r *Result) addWarning(file, title, field, msg string) {
 }
 
 // ValidateRule validates a single detection rule.
-func ValidateRule(r schema.Detection, file string) *Result {
+func ValidateRule(r craftedsignal.Detection, file string) *Result {
 	res := &Result{}
 	title := r.Title
 	if title == "" {
@@ -219,6 +218,6 @@ func ValidateAll(rules []LoadedDetection) *Result {
 
 // LoadedDetection pairs a detection with its source file for validation.
 type LoadedDetection struct {
-	Rule schema.Detection
+	Rule craftedsignal.Detection
 	File string
 }

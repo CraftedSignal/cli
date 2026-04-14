@@ -138,7 +138,7 @@ func (c *Client) GetSimulationRun(runID string) (*SimulationRun, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("simulation run %d not found", runID)
+		return nil, fmt.Errorf("simulation run %s not found", runID)
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

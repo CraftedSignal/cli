@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	"github.com/craftedsignal/cli/internal/validate"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
 // conflictInfo tracks a sync conflict by rule ID and title.
@@ -129,7 +130,7 @@ func filterChangedRules(rules []internalyaml.LoadedRule, lf *lockfile.Lockfile) 
 // runTests triggers test execution on the platform and polls for results.
 // Only tests rules that have an ID (exist on the platform) and have test cases.
 // Returns true if all tests passed or no rules are testable.
-func runTests(client *api.Client, rules []internalyaml.LoadedRule) bool {
+func runTests(ctx context.Context, client *craftedsignal.Client, rules []internalyaml.LoadedRule) bool {
 	var testIDs []string
 	for _, r := range rules {
 		if r.Rule.ID != "" && r.Rule.Tests != nil &&
@@ -145,7 +146,7 @@ func runTests(client *api.Client, rules []internalyaml.LoadedRule) bool {
 	fmt.Printf("Triggering tests for %d rules...\n", len(testIDs))
 
 	// Trigger test workflows
-	resp, err := client.RunTests(testIDs)
+	resp, err := client.Detections.StartTests(ctx, testIDs)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: failed to trigger tests: %v\n", err)
 		return false
@@ -182,7 +183,7 @@ func runTests(client *api.Client, rules []internalyaml.LoadedRule) bool {
 	for i := 0; i < maxPolls; i++ {
 		time.Sleep(pollInterval)
 
-		status, err := client.GetTestStatus(startedIDs)
+		status, err := client.Detections.PollTests(ctx, startedIDs)
 		if err != nil {
 			_, _ = fmt.Fprintf(errOut, "Error: failed to get test status: %v\n", err)
 			return false

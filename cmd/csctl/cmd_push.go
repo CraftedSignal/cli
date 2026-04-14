@@ -1,18 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
+func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, rulePath string) int {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	message := fs.String("m", "", "Version comment")
@@ -49,7 +49,12 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitError
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
+	ctx := context.Background()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: failed to create client: %v\n", err)
+		return ExitError
+	}
 	lf, _ := lockfile.Load()
 
 	allRules, loadErrors := internalyaml.LoadAllLenient(path)
@@ -100,7 +105,7 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	// Run tests for changed rules
 	if *test && len(changedRules) > 0 {
-		if !runTests(client, changedRules) {
+		if !runTests(ctx, client, changedRules) {
 			if !*forceSync {
 				return ExitError
 			}
@@ -115,12 +120,18 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitSuccess
 	}
 
-	var apiRules []schema.Detection
+	var apiRules []craftedsignal.Detection
 	for _, r := range rules {
 		apiRules = append(apiRules, r.Rule)
 	}
 
-	resp, err := client.Import(apiRules, *message, "push", *atomic, false)
+	resp, err := client.Detections.Import(ctx, craftedsignal.ImportRequest{
+		Rules:     apiRules,
+		Message:   *message,
+		Mode:      "push",
+		Atomic:    atomic,
+		SkipTests: false,
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: import failed: %v\n", err)
 		return ExitError
@@ -187,7 +198,7 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 			fmt.Println("No rules with IDs to deploy")
 		} else {
 			fmt.Println("\nDeploying rules...")
-			deployResp, err := client.Deploy(deployIDs, *forceDeploy)
+			deployResp, err := client.Detections.Deploy(ctx, deployIDs, *forceDeploy)
 			if err != nil {
 				_, _ = fmt.Fprintf(errOut, "Error: deploy failed: %v\n", err)
 				if !*forceDeploy {

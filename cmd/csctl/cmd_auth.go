@@ -1,14 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdAuth(url, token string, args []string, clientOpts []api.ClientOption) int {
+func cmdAuth(url, token string, args []string, clientOpts []craftedsignal.Option) int {
 	fs := flag.NewFlagSet("auth", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	_ = fs.Parse(args)
@@ -22,8 +23,12 @@ func cmdAuth(url, token string, args []string, clientOpts []api.ClientOption) in
 		return ExitSuccess
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
-	me, err := client.GetMe()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		fmt.Printf("Failed to create client: %v\n", err)
+		return ExitError
+	}
+	me, err := client.Me(context.Background())
 	if err != nil {
 		fmt.Printf("Authentication failed: %v\n", err)
 		return ExitError

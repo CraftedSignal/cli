@@ -1,20 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
+func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, rulePath string) int {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	resolve := fs.String("resolve", "", "Resolve conflicts: local or remote")
@@ -47,7 +47,12 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitError
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
+	ctx := context.Background()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: failed to create client: %v\n", err)
+		return ExitError
+	}
 	lf, _ := lockfile.Load()
 
 	// Load local rules
@@ -72,7 +77,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	}
 
 	// Get platform status
-	status, err := client.GetSyncStatus()
+	status, err := client.Detections.GetSyncStatus(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: failed to get sync status: %v\n", err)
 		return ExitError
@@ -86,7 +91,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 		}
 	}
 
-	platformByID := make(map[string]api.SyncStatusRule)
+	platformByID := make(map[string]craftedsignal.SyncStatusRule)
 	for _, r := range status.Rules {
 		if matchesFilter(r.Title, r.ID, *filter) && matchesGroup(r.Groups, *group) {
 			platformByID[r.ID] = r
@@ -185,13 +190,19 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 
 	// Execute push (skip saving tests until after test run)
 	wantsTests := *test
-	var pushedAPIRules []schema.Detection
+	var pushedAPIRules []craftedsignal.Detection
 	if len(toPush) > 0 {
 		for _, item := range toPush {
 			pushedAPIRules = append(pushedAPIRules, item.Rule.Rule)
 		}
 
-		resp, err := client.Import(pushedAPIRules, *message, "push", *atomic, wantsTests)
+		resp, err := client.Detections.Import(ctx, craftedsignal.ImportRequest{
+			Rules:     pushedAPIRules,
+			Message:   *message,
+			Mode:      "push",
+			Atomic:    atomic,
+			SkipTests: wantsTests,
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(errOut, "Error: push failed: %v\n", err)
 			return ExitError
@@ -235,7 +246,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	// Run tests against the pushed rules (now testing the current version on platform)
 	testsPassed := true
 	if wantsTests && len(pushRules) > 0 {
-		if !runTests(client, pushRules) {
+		if !runTests(ctx, client, pushRules) {
 			testsPassed = false
 			if !*forceSync {
 				_, _ = fmt.Fprintln(errOut, "Tests failed. Test definitions were NOT saved to the platform.")
@@ -256,7 +267,13 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 			}
 		}
 		if hasTests {
-			_, err := client.Import(pushedAPIRules, "", "push", *atomic, false)
+			_, err := client.Detections.Import(ctx, craftedsignal.ImportRequest{
+				Rules:     pushedAPIRules,
+				Message:   "",
+				Mode:      "push",
+				Atomic:    atomic,
+				SkipTests: false,
+			})
 			if err != nil {
 				_, _ = fmt.Fprintf(errOut, "Warning: failed to save test definitions: %v\n", err)
 			}
@@ -264,9 +281,9 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	}
 
 	// Execute pull
-	var pulledRules []schema.Detection
+	var pulledRules []craftedsignal.Detection
 	if len(toPull) > 0 {
-		rules, err := client.Export("")
+		rules, err := client.Detections.Export(ctx, "")
 		if err != nil {
 			_, _ = fmt.Fprintf(errOut, "Error: pull failed: %v\n", err)
 			return ExitError
@@ -354,7 +371,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 
 		if len(deployIDs) > 0 {
 			fmt.Println("\nDeploying rules...")
-			deployResp, err := client.Deploy(deployIDs, *forceDeploy)
+			deployResp, err := client.Detections.Deploy(ctx, deployIDs, *forceDeploy)
 			if err != nil {
 				_, _ = fmt.Fprintf(errOut, "Error: deploy failed: %v\n", err)
 				if !*forceDeploy {
