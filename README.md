@@ -1,5 +1,9 @@
 # CraftedSignal CLI
 
+[![Build](https://github.com/CraftedSignal/cli/actions/workflows/build.yml/badge.svg)](https://github.com/CraftedSignal/cli/actions/workflows/build.yml)
+[![Test](https://github.com/CraftedSignal/cli/actions/workflows/test.yml/badge.svg)](https://github.com/CraftedSignal/cli/actions/workflows/test.yml)
+[![Release](https://github.com/CraftedSignal/cli/actions/workflows/release.yml/badge.svg)](https://github.com/CraftedSignal/cli/actions/workflows/release.yml)
+
 Command-line tool for managing detection rules as code with bidirectional sync to your CraftedSignal platform.
 
 ## Installation
