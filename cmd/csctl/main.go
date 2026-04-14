@@ -10,6 +10,7 @@ import (
 
 	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
 const (
@@ -142,12 +143,20 @@ Examples:
 	cmd := args[0]
 	cmdArgs := args[1:]
 
-	// Create client options
-	var clientOpts []api.ClientOption
+	// Create SDK client options (used by most commands)
+	var clientOpts []craftedsignal.Option
+	clientOpts = append(clientOpts, craftedsignal.WithBaseURL(url))
 	if insecure {
-		clientOpts = append(clientOpts, api.WithInsecureSkipVerify())
+		clientOpts = append(clientOpts, craftedsignal.WithInsecure())
 	}
-	clientOpts = append(clientOpts, api.WithLogger(logger))
+	clientOpts = append(clientOpts, craftedsignal.WithLogger(logger))
+
+	// Create legacy client options for simulate command (uses internal api package)
+	var legacyClientOpts []api.ClientOption
+	if insecure {
+		legacyClientOpts = append(legacyClientOpts, api.WithInsecureSkipVerify())
+	}
+	legacyClientOpts = append(legacyClientOpts, api.WithLogger(logger))
 
 	// Execute command
 	var exitCode int
@@ -178,7 +187,7 @@ Examples:
 	case "generate":
 		exitCode = cmdGenerate(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "simulate":
-		exitCode = cmdSimulate(url, token, cmdArgs, cfg, clientOpts, *path)
+		exitCode = cmdSimulate(url, token, cmdArgs, cfg, legacyClientOpts, *path)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		flag.Usage()

@@ -6,12 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdInit(url, token string, args []string, clientOpts []api.ClientOption, rulePath string) int {
+func cmdInit(url, token string, args []string, clientOpts []craftedsignal.Option, rulePath string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	fromPlatform := fs.Bool("from-platform", false, "Bootstrap from existing platform rules")
@@ -40,7 +39,7 @@ func cmdInit(url, token string, args []string, clientOpts []api.ClientOption, ru
 		fmt.Printf("  Created %s/\n", dir)
 	}
 
-	example := schema.Detection{
+	example := craftedsignal.Detection{
 		Title:       "Example Detection",
 		Description: "An example detection rule",
 		Platform:    "splunk",

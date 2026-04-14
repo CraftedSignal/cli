@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 	"gopkg.in/yaml.v3"
 )
 
 // LoadedRule represents a rule loaded from a file.
 type LoadedRule struct {
-	Rule     schema.Detection
+	Rule     craftedsignal.Detection
 	FilePath string
 	Hash     string
 }
@@ -107,7 +107,7 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 	folderGroups := extractFolderGroups(relPath)
 
 	// Try to parse as single document first
-	var single schema.Detection
+	var single craftedsignal.Detection
 	if err := yaml.Unmarshal(data, &single); err == nil && single.Title != "" {
 		// Merge folder groups with explicit groups
 		single.Groups = mergeGroups(folderGroups, single.Groups)
@@ -125,7 +125,7 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 	}
 
 	// Try as array
-	var multiple []schema.Detection
+	var multiple []craftedsignal.Detection
 	if err := yaml.Unmarshal(data, &multiple); err == nil {
 		var rules []LoadedRule
 		for _, r := range multiple {
@@ -147,7 +147,7 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 }
 
 // SaveFile saves a rule to a YAML file with pretty formatting.
-func SaveFile(rule schema.Detection, path string) error {
+func SaveFile(rule craftedsignal.Detection, path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -171,7 +171,7 @@ func SaveFile(rule schema.Detection, path string) error {
 }
 
 // buildDetectionNode creates a yaml.Node with pretty formatting.
-func buildDetectionNode(rule schema.Detection) *yaml.Node {
+func buildDetectionNode(rule craftedsignal.Detection) *yaml.Node {
 	root := &yaml.Node{Kind: yaml.MappingNode}
 
 	// Helper to add a field with optional blank line before
@@ -251,10 +251,10 @@ func buildDetectionNode(rule schema.Detection) *yaml.Node {
 }
 
 // buildTestsNode creates a yaml.Node for tests with pretty formatting.
-func buildTestsNode(tests *schema.Tests) *yaml.Node {
+func buildTestsNode(tests *craftedsignal.DetectionTests) *yaml.Node {
 	node := &yaml.Node{Kind: yaml.MappingNode}
 
-	buildTestList := func(testList []schema.Test) *yaml.Node {
+	buildTestList := func(testList []craftedsignal.DetectionTest) *yaml.Node {
 		seq := &yaml.Node{Kind: yaml.SequenceNode}
 		for _, t := range testList {
 			testNode := &yaml.Node{Kind: yaml.MappingNode}
@@ -383,7 +383,7 @@ func mergeGroups(folder, explicit []string) []string {
 
 // ComputeHash computes a hash of the detection's sync-relevant fields.
 // This must match the backend's computeDetectionHash function.
-func ComputeHash(r schema.Detection) (string, error) {
+func ComputeHash(r craftedsignal.Detection) (string, error) {
 	testsHash := computeTestsHash(r.Tests)
 	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%v|%s|%s",
 		r.Title, r.Description, r.Platform, r.Query, r.Severity, r.Kind,
@@ -405,7 +405,7 @@ func sortedSlice(s []string) string {
 }
 
 // computeTestsHash creates a deterministic hash of tests.
-func computeTestsHash(tests *schema.Tests) string {
+func computeTestsHash(tests *craftedsignal.DetectionTests) string {
 	if tests == nil {
 		return ""
 	}
@@ -422,7 +422,7 @@ func computeTestsHash(tests *schema.Tests) string {
 }
 
 // serializeTest converts a test to a deterministic string representation.
-func serializeTest(testType string, t schema.Test) string {
+func serializeTest(testType string, t craftedsignal.DetectionTest) string {
 	// For data, serialize with sorted keys
 	dataStr := serializeTestData(t.Data)
 	return fmt.Sprintf("%s:%s:%s:%s:%s", testType, t.Name, t.Description, dataStr, t.JSON)

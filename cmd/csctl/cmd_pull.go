@@ -1,20 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, rulePath string) int {
+func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, rulePath string) int {
 	fs := flag.NewFlagSet("pull", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	group := fs.String("group", "", "Pull specific group only")
@@ -35,16 +35,21 @@ func cmdPull(url, token string, args []string, cfg *config.Config, clientOpts []
 		return ExitError
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
+	ctx := context.Background()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: failed to create client: %v\n", err)
+		return ExitError
+	}
 
-	allRules, err := client.Export(*group)
+	allRules, err := client.Detections.Export(ctx, *group)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: export failed: %v\n", err)
 		return ExitError
 	}
 
 	// Apply filter
-	var rules []schema.Detection
+	var rules []craftedsignal.Detection
 	for _, r := range allRules {
 		if matchesFilter(r.Title, r.ID, *filter) {
 			rules = append(rules, r)
