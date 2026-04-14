@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -8,14 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	yamlutil "github.com/craftedsignal/cli/internal/yaml"
-	"github.com/craftedsignal/cli/pkg/schema"
+	craftedsignal "github.com/craftedsignal/sdk-go"
 	"gopkg.in/yaml.v3"
 )
 
-func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpts []api.ClientOption, path string) int {
+func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, path string) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fromTI := fs.String("from-ti", "", "Threat intelligence description or path to Sigma YAML file")
 	platform := fs.String("platform", "", "Target SIEM platform (splunk, sentinel, rapid7)")
@@ -43,10 +43,15 @@ func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpt
 		return ExitError
 	}
 
-	client := api.NewClient(url, token, clientOpts...)
+	ctx := context.Background()
+	client, err := craftedsignal.NewClient(token, clientOpts...)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: failed to create client: %v\n", err)
+		return ExitError
+	}
 
 	// Detect input type: Sigma YAML file or free text
-	var req api.GenerateRequest
+	var req craftedsignal.GenerateRequest
 	req.Platform = targetPlatform
 
 	if isSigmaFile(*fromTI) {
@@ -63,18 +68,24 @@ func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpt
 	}
 
 	// Start generation
-	startResp, err := client.StartGenerate(req)
+	startResp, err := client.Detections.StartGenerate(ctx, req)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
 
-	var rules []schema.Detection
+	var rules []craftedsignal.Detection
 
 	if startResp.Status == "completed" {
-		rules = startResp.Rules
+		// Immediate result — poll once to get the rules
+		result, err := client.Detections.PollGenerate(ctx, startResp.WorkflowID)
+		if err != nil {
+			_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
+			return ExitError
+		}
+		rules = result.Rules
 	} else {
-		rules, err = pollForCompletion(client, startResp.WorkflowID)
+		rules, err = pollForCompletion(ctx, client, startResp.WorkflowID)
 		if err != nil {
 			_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 			return ExitError
@@ -138,7 +149,13 @@ func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpt
 	if *push {
 		fmt.Println("\nPushing rules to platform...")
 		atomic := true
-		if _, err := client.Import(rules, "AI-generated rules", "push", atomic, false); err != nil {
+		if _, err := client.Detections.Import(ctx, craftedsignal.ImportRequest{
+			Rules:     rules,
+			Message:   "AI-generated rules",
+			Mode:      "push",
+			Atomic:    &atomic,
+			SkipTests: false,
+		}); err != nil {
 			_, _ = fmt.Fprintf(errOut, "Push failed: %v\n", err)
 			return ExitError
 		}
@@ -148,12 +165,12 @@ func cmdGenerate(url, token string, args []string, cfg *config.Config, clientOpt
 	return ExitSuccess
 }
 
-func pollForCompletion(client *api.Client, workflowID string) ([]schema.Detection, error) {
+func pollForCompletion(ctx context.Context, client *craftedsignal.Client, workflowID string) ([]craftedsignal.Detection, error) {
 	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	i := 0
 
 	for {
-		resp, err := client.PollGenerate(workflowID)
+		resp, err := client.Detections.PollGenerate(ctx, workflowID)
 		if err != nil {
 			return nil, err
 		}
@@ -185,4 +202,3 @@ func isSigmaFile(input string) bool {
 	_, err := os.Stat(input)
 	return err == nil
 }
-
