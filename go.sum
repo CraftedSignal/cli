@@ -4,8 +4,8 @@ github.com/craftedsignal/kql-parser v0.4.3 h1:S2FtVUyqLwsaXpKstE1iaYUx3+ZrnWt1Tl
 github.com/craftedsignal/kql-parser v0.4.3/go.mod h1:RpYkgpfrJglvRwep11K+DIv/bltMHH1ZW27fA3mhs6I=
 github.com/craftedsignal/leql-parser v0.7.1 h1:mRIu4abHr5nCJSEALtYf98VVJjxBsKeS/zBP+oP9EvA=
 github.com/craftedsignal/leql-parser v0.7.1/go.mod h1:bNb+IwNaxUcW18TNPkYQV6tNwgsfKEKtHvgzhaqR8D8=
-github.com/craftedsignal/sdk-go v1.0.0 h1:ulUSx84XTS2jpj9m6k8LeSZK2lTsQZN/IREX+lq3qBg=
-github.com/craftedsignal/sdk-go v1.0.0/go.mod h1:YnwWBxxy6IxPA8QsrBJ25zUc+eFMDjreU8vcaSHMi4g=
+github.com/craftedsignal/sdk-go v1.0.5 h1:QVfiJ5akng5aDbWHd1dTH63tDa7diGVXKztxLthaTII=
+github.com/craftedsignal/sdk-go v1.0.5/go.mod h1:YnwWBxxy6IxPA8QsrBJ25zUc+eFMDjreU8vcaSHMi4g=
 github.com/craftedsignal/spl-parser v0.9.4 h1:UDFFpjB0T/BMxrbJLQbRHpuuc3xHI7YwQ/CrGEwL+uA=
 github.com/craftedsignal/spl-parser v0.9.4/go.mod h1:4p3m0KbSM5oOTlQJEmQZQokYFkOhpjSPaoBmMNdWXbc=
 golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=
