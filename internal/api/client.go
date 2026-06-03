@@ -81,7 +81,7 @@ type detectionTechniquesResponse struct {
 
 // GetDetectionTechniques fetches the MITRE techniques for a single detection by ID.
 func (c *Client) GetDetectionTechniques(detectionID string) ([]string, error) {
-	resp, err := c.do("GET", "/api/v1/detections/"+url.PathEscape(detectionID)+"/export", nil)
+	resp, err := c.do("GET", "/api/v1/detections/"+url.PathEscape(detectionID)+"/export?format=json", nil)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import "github.com/craftedsignal/cli/internal/simulate"
 func RegisterAll(reg *simulate.Registry) {
 	// Errors are intentionally ignored here because duplicate registration
 	// is not expected for built-in adapters.
+	_ = reg.Register(NewEmbedded())
 	_ = reg.Register(NewAtomic())
 	_ = reg.Register(NewMimikatz())
 	_ = reg.Register(NewLsassy())
