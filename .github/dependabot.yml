@@ -9,9 +9,16 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(ci):"
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # Go modules
   - package-ecosystem: "gomod"
@@ -21,7 +28,7 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps):"
     groups:
@@ -44,3 +51,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(go):"
+    groups:
+      go-docker-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
