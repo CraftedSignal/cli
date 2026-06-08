@@ -1,0 +1,25 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1562.001
+display_name: 'Impair Defenses: Disable or Modify Tools'
+atomic_tests:
+- name: Disable Microsoft Defender real-time monitoring
+  supported_platforms:
+  - windows
+  executor:
+    name: powershell
+    elevation_required: true
+    command: |
+      Set-MpPreference -DisableRealtimeMonitoring $true
+    cleanup_command: |
+      Set-MpPreference -DisableRealtimeMonitoring $false
+- name: Disable SELinux enforcement
+  supported_platforms:
+  - linux
+  executor:
+    name: sh
+    elevation_required: true
+    command: |
+      setenforce 0
+    cleanup_command: |
+      setenforce 1

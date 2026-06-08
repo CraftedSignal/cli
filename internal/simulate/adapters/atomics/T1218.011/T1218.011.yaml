@@ -1,0 +1,18 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1218.011
+display_name: 'System Binary Proxy Execution: Rundll32'
+atomic_tests:
+- name: Rundll32 execute Control_RunDLL
+  supported_platforms:
+  - windows
+  input_arguments:
+    dll:
+      description: DLL and entry point to invoke
+      type: string
+      default: shell32.dll,Control_RunDLL
+  executor:
+    name: command_prompt
+    elevation_required: false
+    command: |
+      rundll32.exe #{dll}

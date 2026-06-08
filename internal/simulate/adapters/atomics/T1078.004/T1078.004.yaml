@@ -1,0 +1,14 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1078.004
+display_name: 'Valid Accounts: Cloud Accounts'
+atomic_tests:
+- name: AWS - enumerate caller identity
+  supported_platforms:
+  - linux
+  - macos
+  executor:
+    name: sh
+    elevation_required: false
+    command: |
+      aws sts get-caller-identity

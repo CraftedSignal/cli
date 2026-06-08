@@ -1,0 +1,51 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1136.001
+display_name: 'Create Account: Local Account'
+atomic_tests:
+- name: Create a new user in a command prompt
+  supported_platforms:
+  - windows
+  input_arguments:
+    username:
+      default: csctl_test_user
+    password:
+      default: 'Atomic123!'
+  executor:
+    name: command_prompt
+    elevation_required: true
+    command: |
+      net user /add #{username} #{password}
+    cleanup_command: |
+      net user /del #{username} >nul 2>&1
+- name: Create a new user in Linux
+  supported_platforms:
+  - linux
+  input_arguments:
+    username:
+      default: csctl_test_user
+    password:
+      default: 'Atomic123!'
+  executor:
+    name: sh
+    elevation_required: true
+    command: |
+      useradd #{username}
+    cleanup_command: |
+      userdel #{username}
+- name: Create a new user in macOS
+  supported_platforms:
+  - macos
+  input_arguments:
+    username:
+      default: csctl_test_user
+    password:
+      default: 'Atomic123!'
+  executor:
+    name: sh
+    elevation_required: true
+    command: |
+      dscl . -create /Users/#{username}
+      dscl . -create /Users/#{username} UserShell /usr/bin/false
+    cleanup_command: |
+      dscl . -delete /Users/#{username}

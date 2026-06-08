@@ -87,7 +87,7 @@ func cmdSimulateList(reg *simulate.Registry, args []string) int {
 	tacticFlag := fs.String("tactic", "", "Filter by MITRE tactic")
 	platformFlag := fs.String("platform", "", "Filter by platform (windows, linux, macos, aws, azure, gcp)")
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
@@ -135,12 +135,50 @@ func cmdSimulateList(reg *simulate.Registry, args []string) int {
 	return ExitSuccess
 }
 
+// parseInterspersed parses args while allowing flags to appear before OR after
+// positional arguments. Go's standard flag package stops at the first non-flag
+// token, so `run T1105 --live` would silently drop --live. This permutes the
+// args — moving every flag (and its value, for non-boolean flags) ahead of the
+// positionals behind a `--` terminator — then hands them to fs.Parse.
+func parseInterspersed(fs *flag.FlagSet, args []string) error {
+	var flags, positionals []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		if len(a) >= 2 && a[0] == '-' {
+			flags = append(flags, a)
+			// "--name value" form: pull the next token as the value unless the
+			// flag is boolean or the value is already attached with '='.
+			if !strings.Contains(a, "=") {
+				name := strings.TrimLeft(a, "-")
+				if f := fs.Lookup(name); f != nil && !isBoolFlag(f) && i+1 < len(args) {
+					flags = append(flags, args[i+1])
+					i++
+				}
+			}
+			continue
+		}
+		positionals = append(positionals, a)
+	}
+	reordered := append(flags, "--")
+	reordered = append(reordered, positionals...)
+	return fs.Parse(reordered)
+}
+
+func isBoolFlag(f *flag.Flag) bool {
+	bf, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && bf.IsBoolFlag()
+}
+
 func cmdSimulatePlan(reg *simulate.Registry, args []string) int {
 	fs := flag.NewFlagSet("simulate plan", flag.ExitOnError)
 	adapterFlag := fs.String("adapter", "", "Adapter to use")
 	targetFlag := fs.String("target", "", "Target host or environment")
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
@@ -185,7 +223,7 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 	ruleFlag := fs.String("rule", "", "Detection rule ID — fetches its techniques and runs them all")
 	targetDetectionFlag := fs.String("target-detection", "", "Internal: detection ID to directly correlate with")
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
@@ -434,7 +472,7 @@ func cmdSimulateStatus(url, token string, args []string, clientOpts []api.Client
 	fs := flag.NewFlagSet("simulate status", flag.ExitOnError)
 	runIDFlag := fs.String("run-id", "", "Simulation run ID")
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}
@@ -476,7 +514,7 @@ func cmdSimulateCleanup(reg *simulate.Registry, args []string) int {
 	fs := flag.NewFlagSet("simulate cleanup", flag.ExitOnError)
 	adapterFlag := fs.String("adapter", "", "Adapter to use for cleanup")
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %v\n", err)
 		return ExitError
 	}

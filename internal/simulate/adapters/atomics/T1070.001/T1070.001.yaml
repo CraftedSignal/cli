@@ -1,0 +1,13 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1070.001
+display_name: 'Indicator Removal: Clear Windows Event Logs'
+atomic_tests:
+- name: Clear System log via wevtutil
+  supported_platforms:
+  - windows
+  executor:
+    name: command_prompt
+    elevation_required: true
+    command: |
+      wevtutil cl System

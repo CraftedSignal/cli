@@ -1,0 +1,13 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1059.001
+display_name: 'Command and Scripting Interpreter: PowerShell'
+atomic_tests:
+- name: Run Bloodhound-style discovery via PowerShell
+  supported_platforms:
+  - windows
+  executor:
+    name: powershell
+    elevation_required: false
+    command: |
+      powershell.exe -NoProfile -Command "Write-Host 'Atomic Test T1059.001'; whoami"

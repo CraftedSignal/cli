@@ -1,0 +1,44 @@
+# Vendored minimal subset of redcanaryco/atomic-red-team (MIT). Real upstream
+# commands; full catalog available via CSCTL_ATOMICS_PATH.
+attack_technique: T1105
+display_name: Ingress Tool Transfer
+atomic_tests:
+- name: certutil download
+  supported_platforms:
+  - windows
+  input_arguments:
+    url:
+      description: URL to fetch
+      type: url
+      default: https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/LICENSE.txt
+    dest:
+      description: Destination file
+      type: path
+      default: '%TEMP%\atomic-t1105.txt'
+  executor:
+    name: command_prompt
+    elevation_required: false
+    command: |
+      certutil -urlcache -split -f #{url} #{dest}
+    cleanup_command: |
+      del #{dest} >nul 2>&1
+- name: curl download
+  supported_platforms:
+  - macos
+  - linux
+  input_arguments:
+    url:
+      description: URL to fetch
+      type: url
+      default: https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/LICENSE.txt
+    dest:
+      description: Destination file
+      type: path
+      default: /tmp/atomic-t1105.txt
+  executor:
+    name: sh
+    elevation_required: false
+    command: |
+      curl -fsS #{url} -o #{dest}
+    cleanup_command: |
+      rm -f #{dest}
