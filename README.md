@@ -103,6 +103,14 @@ query: |
   | stats count by src_ip
   | where count > 5
 
+operational_guidance: |
+  # Brute Force SSH Response
+
+  ## Steps
+
+  1. Validate the source IP, target user, and affected host.
+  2. Check whether the source is approved automation or vulnerability scanning.
+  3. Reset credentials and block the source when the activity is confirmed malicious.
 
 kind: scheduled
 severity: high
@@ -206,6 +214,7 @@ tests:
 | `techniques` | No | MITRE ATT&CK technique IDs (e.g., `T1059.001`) |
 | `tags` | No | Custom labels for filtering/organization |
 | `groups` | No | Detection groups for logical organization |
+| `operational_guidance` | No | Analyst response guidance or runbook text |
 | `tests` | No | Test cases with positive (should match) and negative (should not match) samples |
 
 ## Folder Structure

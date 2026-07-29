@@ -111,6 +111,7 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 	if err := yaml.Unmarshal(data, &single); err == nil && single.Title != "" {
 		// Merge folder groups with explicit groups
 		single.Groups = mergeGroups(folderGroups, single.Groups)
+		single.OperationalGuidance = normalizeOperationalGuidance(single.OperationalGuidance)
 
 		hash, err := ComputeHash(single)
 		if err != nil {
@@ -130,6 +131,7 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 		var rules []LoadedRule
 		for _, r := range multiple {
 			r.Groups = mergeGroups(folderGroups, r.Groups)
+			r.OperationalGuidance = normalizeOperationalGuidance(r.OperationalGuidance)
 			hash, err := ComputeHash(r)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute hash for %s: %w", path, err)
@@ -148,6 +150,8 @@ func LoadFile(path, root string) ([]LoadedRule, error) {
 
 // SaveFile saves a rule to a YAML file with pretty formatting.
 func SaveFile(rule craftedsignal.Detection, path string) error {
+	rule.OperationalGuidance = normalizeOperationalGuidance(rule.OperationalGuidance)
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -218,7 +222,12 @@ func buildDetectionNode(rule craftedsignal.Detection) *yaml.Node {
 		addField("query", rule.Query, yaml.LiteralStyle, true)
 	}
 
-	// Section 3: Metadata (with blank line before)
+	// Section 3: Response guidance (with blank line before)
+	if rule.OperationalGuidance != "" {
+		addField("operational_guidance", rule.OperationalGuidance, yaml.LiteralStyle, true)
+	}
+
+	// Section 4: Metadata (with blank line before)
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "platform", HeadComment: "\n"}
 	valNode := &yaml.Node{Kind: yaml.ScalarNode, Value: rule.Platform}
 	root.Content = append(root.Content, keyNode, valNode)
@@ -240,7 +249,7 @@ func buildDetectionNode(rule craftedsignal.Detection) *yaml.Node {
 	addSlice("techniques", rule.Techniques)
 	addSlice("tags", rule.Tags)
 
-	// Section 4: Tests (with blank line before)
+	// Section 5: Tests (with blank line before)
 	if rule.Tests != nil && (len(rule.Tests.Positive) > 0 || len(rule.Tests.Negative) > 0) {
 		testsKeyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "tests", HeadComment: "\n"}
 		testsNode := buildTestsNode(rule.Tests)
@@ -385,12 +394,20 @@ func mergeGroups(folder, explicit []string) []string {
 // This must match the backend's computeDetectionHash function.
 func ComputeHash(r craftedsignal.Detection) (string, error) {
 	testsHash := computeTestsHash(r.Tests)
-	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%v|%s|%s",
+	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%v|%s|%s|%s",
 		r.Title, r.Description, r.Platform, r.Query, r.Severity, r.Kind,
 		r.Frequency, r.Period, sortedSlice(r.Tactics), sortedSlice(r.Techniques),
-		sortedSlice(r.Tags), r.Enabled, sortedSlice(r.Groups), testsHash)
+		sortedSlice(r.Tags), r.Enabled, sortedSlice(r.Groups), testsHash, normalizeOperationalGuidance(r.OperationalGuidance))
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:]), nil
+}
+
+func normalizeOperationalGuidance(raw string) string {
+	body := strings.TrimSpace(raw)
+	if body == "" {
+		return ""
+	}
+	return body + "\n"
 }
 
 // sortedSlice returns a sorted copy of the slice as a joined string.
