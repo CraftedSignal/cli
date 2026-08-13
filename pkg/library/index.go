@@ -20,11 +20,13 @@ const IndexVersion = 1
 
 // Index represents a library repository index file.
 type Index struct {
-	Version    int            `json:"version" yaml:"version"`
-	Repository RepositoryInfo `json:"repository" yaml:"repository"`
-	SigningKey string         `json:"signing_key_id,omitempty" yaml:"signing_key_id,omitempty"`
-	Signature  string         `json:"signature,omitempty" yaml:"signature,omitempty"`
-	Entries    []IndexEntry   `json:"entries" yaml:"entries"`
+	Version             int                  `json:"version" yaml:"version"`
+	Repository          RepositoryInfo       `json:"repository" yaml:"repository"`
+	SigningKey          string               `json:"signing_key_id,omitempty" yaml:"signing_key_id,omitempty"`
+	Signature           string               `json:"signature,omitempty" yaml:"signature,omitempty"`
+	Entries             []IndexEntry         `json:"entries" yaml:"entries"`
+	Guidance            []GuidanceEntry      `json:"guidance,omitempty" yaml:"guidance,omitempty"`
+	GuidanceAssignments []GuidanceAssignment `json:"guidance_assignments,omitempty" yaml:"guidance_assignments,omitempty"`
 }
 
 // RepositoryInfo contains metadata about the library repository.
@@ -37,15 +39,15 @@ type RepositoryInfo struct {
 
 // IndexEntry represents a single entry in the library index.
 type IndexEntry struct {
-	ID          string   `json:"id" yaml:"id"`
-	Name        string   `json:"name" yaml:"name"`
-	Description string   `json:"description" yaml:"description"`
-	QueryType   string   `json:"query_type" yaml:"query_type"` // spl, kql, leql, rapid7
-	Severity    string   `json:"severity" yaml:"severity"`     // critical, high, medium, low
-	Author      string   `json:"author,omitempty" yaml:"author,omitempty"`
-	Version     string   `json:"version,omitempty" yaml:"version,omitempty"`
-	CreatedAt   string   `json:"created_at,omitempty" yaml:"created_at,omitempty"`
-	UpdatedAt   string   `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description" yaml:"description"`
+	QueryType   string `json:"query_type" yaml:"query_type"` // spl, kql, leql, rapid7
+	Severity    string `json:"severity" yaml:"severity"`     // critical, high, medium, low
+	Author      string `json:"author,omitempty" yaml:"author,omitempty"`
+	Version     string `json:"version,omitempty" yaml:"version,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty" yaml:"created_at,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
 
 	// File reference and integrity
 	File   string `json:"file" yaml:"file"`     // Relative path to query file
@@ -58,6 +60,44 @@ type IndexEntry struct {
 	// Searchable metadata
 	Tags        []string `json:"tags,omitempty" yaml:"tags,omitempty"`
 	DataSources []string `json:"data_sources,omitempty" yaml:"data_sources,omitempty"`
+}
+
+// GuidanceEntry represents a reusable response guide in the library index.
+type GuidanceEntry struct {
+	ID                  string      `json:"id" yaml:"id"`
+	Name                string      `json:"name" yaml:"name"`
+	Description         string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Body                string      `json:"body,omitempty" yaml:"body,omitempty"`
+	Markdown            string      `json:"markdown,omitempty" yaml:"markdown,omitempty"`
+	OperationalGuidance interface{} `json:"operational_guidance,omitempty" yaml:"operational_guidance,omitempty"`
+	Status              string      `json:"status,omitempty" yaml:"status,omitempty"`
+	AppliesTo           []string    `json:"applies_to,omitempty" yaml:"applies_to,omitempty"`
+	Tactics             []string    `json:"tactics,omitempty" yaml:"tactics,omitempty"`
+	Techniques          []string    `json:"techniques,omitempty" yaml:"techniques,omitempty"`
+	Tags                []string    `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Author              string      `json:"author,omitempty" yaml:"author,omitempty"`
+	Version             string      `json:"version,omitempty" yaml:"version,omitempty"`
+	File                string      `json:"file,omitempty" yaml:"file,omitempty"`
+}
+
+// GuidanceAssignment maps guidance entries to matching library consumers.
+type GuidanceAssignment struct {
+	ID        string                  `json:"id" yaml:"id"`
+	Name      string                  `json:"name,omitempty" yaml:"name,omitempty"`
+	AppliesTo string                  `json:"applies_to,omitempty" yaml:"applies_to,omitempty"`
+	Guidance  []string                `json:"guidance" yaml:"guidance"`
+	Mode      string                  `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Priority  int                     `json:"priority,omitempty" yaml:"priority,omitempty"`
+	Match     GuidanceAssignmentMatch `json:"match,omitempty" yaml:"match,omitempty"`
+}
+
+// GuidanceAssignmentMatch describes which rules receive a guidance assignment.
+type GuidanceAssignmentMatch struct {
+	Tactics    []string `json:"tactics,omitempty" yaml:"tactics,omitempty"`
+	Techniques []string `json:"techniques,omitempty" yaml:"techniques,omitempty"`
+	Tags       []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	TagsAny    []string `json:"tags_any,omitempty" yaml:"tags_any,omitempty"`
+	Severity   string   `json:"severity,omitempty" yaml:"severity,omitempty"`
 }
 
 // LibraryEntry represents a detection query in YAML format.
