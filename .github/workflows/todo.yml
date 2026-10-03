@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: TODO to Issue
-        uses: alstr/todo-to-issue-action@64aca8fda7023259aada83ba44ad988c4c443657
+        uses: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a
         with:
           IDENTIFIERS: '[{"name": "TODO", "labels": ["todo"]}, {"name": "FIXME", "labels": ["bug", "priority"]}, {"name": "HACK", "labels": ["tech-debt"]}, {"name": "OPTIMIZE", "labels": ["performance"]}]'
           CLOSE_ISSUES: true
