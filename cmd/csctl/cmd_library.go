@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/pkg/library"
 )
 
-func cmdLibrary(args []string) int {
+func cmdLibrary(url, token string, args []string, clientOpts []api.ClientOption) int {
 	if len(args) == 0 {
 		printLibraryUsage()
 		return ExitError
@@ -23,6 +24,14 @@ func cmdLibrary(args []string) int {
 	switch subcmd {
 	case "index":
 		return cmdLibraryIndex(subArgs)
+	case "export":
+		return cmdLibraryExport(url, token, subArgs, clientOpts)
+	case "apply":
+		return cmdLibraryApply(url, token, subArgs, clientOpts)
+	case "import":
+		return cmdLibraryApply(url, token, subArgs, clientOpts)
+	case "status":
+		return cmdLibraryStatus(url, token, subArgs, clientOpts)
 	default:
 		_, _ = fmt.Fprintf(errOut, "Unknown library subcommand: %s\n", subcmd)
 		printLibraryUsage()
@@ -34,7 +43,11 @@ func printLibraryUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: csctl library <subcommand> [flags]
 
 Subcommands:
-  index     Manage library index files
+  export    Export local company library to YAML
+  apply     Apply local library YAML to the platform
+  import    Alias for apply
+  status    Show local library sync status
+  index     Manage signed library index files
 
 Run 'csctl library <subcommand> -h' for help on a subcommand.
 `)

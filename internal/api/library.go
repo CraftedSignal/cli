@@ -73,17 +73,24 @@ func (c *Client) ImportLibrary(req LibraryImportRequest) (*LibraryImportResponse
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("import library failed (status %d): %s", resp.StatusCode, string(body))
-	}
 	var apiResp APIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return nil, fmt.Errorf("failed parse response (status %d): %w", resp.StatusCode, err)
 	}
 	var result LibraryImportResponse
-	if err := json.Unmarshal(apiResp.Data, &result); err != nil {
-		return nil, fmt.Errorf("failed parse library import response (status %d): %w", resp.StatusCode, err)
+	if len(apiResp.Data) > 0 {
+		if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+			return nil, fmt.Errorf("failed parse library import response (status %d): %w", resp.StatusCode, err)
+		}
+	}
+	if resp.StatusCode >= 400 {
+		if apiResp.Error != nil {
+			return &result, fmt.Errorf("import library failed (status %d): %s", resp.StatusCode, apiResp.Error.Message)
+		}
+		return &result, fmt.Errorf("import library failed (status %d)", resp.StatusCode)
+	}
+	if len(apiResp.Data) == 0 {
+		return nil, fmt.Errorf("failed parse library import response (status %d): empty data", resp.StatusCode)
 	}
 	return &result, nil
 }

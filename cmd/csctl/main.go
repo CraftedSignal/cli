@@ -60,7 +60,7 @@ Commands:
   diff      Show differences between local and platform
   init      Initialize detections directory structure
   auth      Check authentication status
-  library   Library management (index generation, signing)
+  library   Library management (sync, export, index generation, signing)
   generate  Generate detection rules from threat intelligence
   simulate  Run attack simulations and verify detection coverage
 
@@ -173,7 +173,7 @@ Examples:
 	case "pull":
 		exitCode = cmdPull(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "sync":
-		exitCode = cmdSync(url, token, cmdArgs, cfg, clientOpts, *path)
+		exitCode = cmdSync(url, token, cmdArgs, cfg, clientOpts, legacyClientOpts, *path)
 	case "validate":
 		exitCode = cmdValidate(cmdArgs, cfg, *path)
 	case "diff":
@@ -183,7 +183,7 @@ Examples:
 	case "auth":
 		exitCode = cmdAuth(url, token, cmdArgs, clientOpts)
 	case "library":
-		exitCode = cmdLibrary(cmdArgs)
+		exitCode = cmdLibrary(url, token, cmdArgs, legacyClientOpts)
 	case "generate":
 		exitCode = cmdGenerate(url, token, cmdArgs, cfg, clientOpts, *path)
 	case "simulate":

@@ -57,6 +57,56 @@ csctl sync -resolve=local           # Keep local changes on conflict
 csctl sync -resolve=remote          # Keep platform changes on conflict
 ```
 
+Library sync is opt-in on `csctl sync`; the default is `-library=false` so existing detection-only CI jobs do not need the `library:read` or `library:sync` API scopes.
+
+```bash
+csctl sync -library                 # Also sync library.yaml templates/guides
+csctl sync -library -library-file ./library.yaml
+```
+
+### Sync library templates
+
+```bash
+csctl library export -output library.yaml
+csctl library apply -input library.yaml -m "Sync library from Git"
+csctl library import library.yaml           # Alias for apply
+csctl library status
+```
+
+Library YAML uses `type` to distinguish reusable templates from active rules:
+
+```yaml
+version: 1
+items:
+  - type: rule_template
+    id: suspicious-powershell
+    name: Suspicious PowerShell
+    query_type: kql
+    query: |
+      SecurityEvent
+      | where EventID == 4688
+
+  - type: hunt_template
+    id: lateral-movement-hunt
+    name: Lateral movement hunt
+    queries:
+      - title: Remote service creation
+        query_type: spl
+        query: |
+          index=wineventlog EventCode=7045
+
+  - type: guide
+    id: credential-access-response
+    name: Credential access response
+    body: |
+      ## Runbook
+      Review identity alerts and privilege changes.
+```
+
+Valid values are `rule_template`, `hunt_template`, and `guide`. `type: rule` and `type: detection` are rejected for library YAML; active detections stay in the normal rule YAML files.
+
+Library export only includes the company's local library content, not managed remote or cloud library sources. Tokens need `library:read` for `library export`, `library status`, or `sync -library` bootstrap export, and `library:sync` for `library apply` or `sync -library` when `library.yaml` exists.
+
 ### Validate YAML files
 
 ```bash

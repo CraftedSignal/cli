@@ -85,7 +85,7 @@ func actionSymbol(action string) string {
 		return "~"
 	case "unchanged":
 		return "="
-	case "error":
+	case "error", "rolled_back":
 		return "!"
 	default:
 		return "?"

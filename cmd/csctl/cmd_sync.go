@@ -8,13 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/craftedsignal/cli/internal/api"
 	"github.com/craftedsignal/cli/internal/config"
 	"github.com/craftedsignal/cli/internal/lockfile"
 	internalyaml "github.com/craftedsignal/cli/internal/yaml"
 	craftedsignal "github.com/craftedsignal/sdk-go"
 )
 
-func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, rulePath string) int {
+func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []craftedsignal.Option, libraryClientOpts []api.ClientOption, rulePath string) int {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	tokenFlag := fs.String("token", "", "API token")
 	resolve := fs.String("resolve", "", "Resolve conflicts: local or remote")
@@ -26,6 +27,8 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	deploy := fs.Bool("deploy", false, "Deploy rules to SIEM after syncing")
 	forceSync := fs.Bool("force-sync", false, "Continue sync even if validation or tests fail")
 	forceDeploy := fs.Bool("force-deploy", false, "Deploy even if validation or tests fail (implies -deploy)")
+	syncLibrary := fs.Bool("library", false, "Also sync local library YAML")
+	libraryFile := fs.String("library-file", defaultLibrarySyncFile, "Library YAML path for -library")
 	_ = fs.Parse(args)
 
 	if *tokenFlag != "" {
@@ -392,6 +395,13 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 				}
 				fmt.Printf("Deployed: %d, Failed: %d\n", deployResp.Deployed, deployResp.Failed)
 			}
+		}
+	}
+
+	if *syncLibrary {
+		fmt.Println("\nSyncing library...")
+		if code := syncLibraryFile(url, token, *libraryFile, *message, atomic, libraryClientOpts); code != ExitSuccess {
+			return code
 		}
 	}
 
