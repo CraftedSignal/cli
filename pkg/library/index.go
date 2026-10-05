@@ -40,6 +40,7 @@ type RepositoryInfo struct {
 // IndexEntry represents a single entry in the library index.
 type IndexEntry struct {
 	ID          string `json:"id" yaml:"id"`
+	Type        string `json:"type,omitempty" yaml:"type,omitempty"`
 	Name        string `json:"name" yaml:"name"`
 	Description string `json:"description" yaml:"description"`
 	QueryType   string `json:"query_type" yaml:"query_type"` // spl, kql, leql, rapid7
@@ -103,6 +104,7 @@ type GuidanceAssignmentMatch struct {
 // LibraryEntry represents a detection query in YAML format.
 type LibraryEntry struct {
 	ID          string   `yaml:"id"`
+	Type        string   `yaml:"type,omitempty"`
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
 	Query       string   `yaml:"query"`
@@ -194,6 +196,7 @@ func parseQueryFile(path string, baseDir string) (*IndexEntry, error) {
 
 	return &IndexEntry{
 		ID:              entry.ID,
+		Type:            libraryEntryType(entry.Type),
 		Name:            entry.Name,
 		Description:     entry.Description,
 		QueryType:       entry.QueryType,
@@ -206,6 +209,17 @@ func parseQueryFile(path string, baseDir string) (*IndexEntry, error) {
 		File:            relPath,
 		SHA256:          fmt.Sprintf("%x", hash),
 	}, nil
+}
+
+func libraryEntryType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "hunt_template":
+		return "hunt_template"
+	case "guide":
+		return "guide"
+	default:
+		return "rule_template"
+	}
 }
 
 // Sign signs the index entries with an Ed25519 private key.
