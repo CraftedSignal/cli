@@ -18,11 +18,13 @@ type CreateSimulationRunRequest struct {
 	StartedAt     string `json:"started_at"`
 	CompletedAt   string `json:"completed_at"`
 	ExecutionLog  string `json:"execution_log"`
-	Observables []struct {
+	Observables   []struct {
 		Field string `json:"field"`
 		Value string `json:"value"`
 	} `json:"observables,omitempty"`
 	TargetDetectionID string `json:"target_detection_id,omitempty"`
+	ExecutionStatus   string `json:"execution_status,omitempty"`
+	BlockEvidence     string `json:"block_evidence,omitempty"`
 }
 
 // SimulationRun represents a simulation run with optional results.

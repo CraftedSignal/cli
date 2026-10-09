@@ -340,6 +340,19 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 
 	fmt.Printf("Execution completed (exit code %d, duration %s)\n",
 		result.ExitCode, result.EndTime.Sub(result.StartTime).Round(time.Second))
+	if result.Status != simulate.StatusExecuted {
+		checkCtx, cancelCheck := context.WithTimeout(context.Background(), 30*time.Second)
+		if evidence, ok := simulate.DefenderBlockEvidence(checkCtx, result.StartTime, result.EndTime.Add(5*time.Second)); ok {
+			result.Status = simulate.StatusBlocked
+			result.BlockEvidence = evidence
+		}
+		cancelCheck()
+	}
+	fmt.Printf("Execution status: %s", result.Status)
+	if result.BlockEvidence != "" {
+		fmt.Printf(" (%s)", result.BlockEvidence)
+	}
+	fmt.Println()
 
 	if *debug && result.Stdout != "" {
 		fmt.Printf("\n--- stdout ---\n%s\n", result.Stdout)
@@ -415,15 +428,17 @@ func cmdSimulateRun(url, token string, reg *simulate.Registry, args []string, cl
 		}
 
 		req := api.CreateSimulationRunRequest{
-			TechniqueID:   techniqueID,
-			TechniqueName: techName,
-			Adapter:       adapter.Name(),
-			ExecMode:      plan.ExecMode.String(),
-			Target:        reportTarget,
-			OS:            runtime.GOOS + "/" + runtime.GOARCH,
-			StartedAt:     result.StartTime.UTC().Format(time.RFC3339),
-			CompletedAt:   result.EndTime.UTC().Format(time.RFC3339),
-			ExecutionLog:  result.Stdout,
+			TechniqueID:     techniqueID,
+			TechniqueName:   techName,
+			Adapter:         adapter.Name(),
+			ExecMode:        plan.ExecMode.String(),
+			Target:          reportTarget,
+			OS:              runtime.GOOS + "/" + runtime.GOARCH,
+			StartedAt:       result.StartTime.UTC().Format(time.RFC3339),
+			CompletedAt:     result.EndTime.UTC().Format(time.RFC3339),
+			ExecutionLog:    result.Stdout,
+			ExecutionStatus: string(result.Status),
+			BlockEvidence:   result.BlockEvidence,
 		}
 		for _, obs := range plan.Observables {
 			req.Observables = append(req.Observables, struct {

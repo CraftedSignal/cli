@@ -3,6 +3,7 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/craftedsignal/cli/internal/simulate"
@@ -30,8 +32,8 @@ func NewEmbedded() simulate.BASAdapter {
 }
 
 func (e *embeddedAdapter) Name() string               { return "embedded" }
-func (e *embeddedAdapter) Kind() simulate.AdapterKind  { return simulate.Framework }
-func (e *embeddedAdapter) Available() bool             { return true }
+func (e *embeddedAdapter) Kind() simulate.AdapterKind { return simulate.Framework }
+func (e *embeddedAdapter) Available() bool            { return true }
 
 func (e *embeddedAdapter) List(filter simulate.Filter) ([]simulate.Technique, error) {
 	var out []simulate.Technique
@@ -122,10 +124,17 @@ func (e *embeddedAdapter) Execute(ctx context.Context, plan *simulate.ExecutionP
 		StartTime: start,
 		EndTime:   time.Now(),
 		Stdout:    stdout.String(),
+		Status:    simulate.StatusExecuted,
 	}
 	if execErr != nil {
 		result.Stderr = execErr.Error()
 		result.ExitCode = 1
+		result.Status = simulate.StatusDidNotRun
+		var blocked *simulate.BlockedError
+		if errors.As(execErr, &blocked) {
+			result.Status = simulate.StatusBlocked
+			result.BlockEvidence = blocked.Evidence
+		}
 	}
 	return result, nil
 }
@@ -145,14 +154,12 @@ func (e *embeddedAdapter) Cleanup(ctx context.Context, plan *simulate.ExecutionP
 
 // --- T1105: Ingress Tool Transfer ---
 
-// EICAR test string — the standard antivirus test file.
-// It is NOT malicious but triggers AV/EDR detections by design.
-// See https://www.eicar.org/download-anti-malware-testfile/
-const eicarTestString = `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`
+// t1105URL serves the EICAR test file over HTTPS. Tests point it at a local server.
+var t1105URL = "https://secure.eicar.org/eicar.com.txt"
 
-// t1105URL serves the EICAR test file over HTTPS. This is the official
-// distribution endpoint from eicar.org for testing HTTP-based file transfers.
-const t1105URL = "https://secure.eicar.org/eicar.com.txt"
+// t1105QuarantineWait is how long T1105 waits before checking whether an
+// antivirus removed the downloaded file.
+var t1105QuarantineWait = 3 * time.Second
 
 func t1105Path() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("csctl-t1105-%d", time.Now().Unix()))
@@ -160,49 +167,76 @@ func t1105Path() string {
 
 func executeT1105(ctx context.Context, plan *simulate.ExecutionPlan, stdout *bytes.Buffer) error {
 	dest := t1105Path()
-
-	// Try to download the EICAR test file from the official source.
-	// If the download is blocked (by proxy/AV), fall back to writing the
-	// EICAR string directly — the file-write itself is the simulation event.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t1105URL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("User-Agent", "csctl-simulation/1.0")
 
-	var n int64
-	var source string
 	resp, err := http.DefaultClient.Do(req)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer func() { _ = resp.Body.Close() }()
-		f, fErr := os.Create(dest)
-		if fErr != nil {
-			return fmt.Errorf("creating temp file: %w", fErr)
+	if err != nil {
+		if downloadCut(err) {
+			return &simulate.BlockedError{Evidence: "download connection was reset"}
 		}
-		n, err = io.Copy(f, resp.Body)
-		if err2 := f.Close(); err2 != nil && err == nil {
-			err = err2
+		return fmt.Errorf("downloading test file: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		if refusedByProxy(resp.StatusCode) {
+			return &simulate.BlockedError{Evidence: fmt.Sprintf("download refused with HTTP %d", resp.StatusCode)}
 		}
-		if err != nil {
-			return fmt.Errorf("writing downloaded content: %w", err)
+		return fmt.Errorf("downloading test file: HTTP %d", resp.StatusCode)
+	}
+
+	f, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	n, err := io.Copy(f, resp.Body)
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		if downloadCut(err) {
+			return &simulate.BlockedError{Evidence: "download connection was reset"}
 		}
-		source = t1105URL
-	} else {
-		// Fallback: write EICAR string directly
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		if wErr := os.WriteFile(dest, []byte(eicarTestString), 0644); wErr != nil {
-			return fmt.Errorf("writing EICAR test file: %w", wErr)
-		}
-		n = int64(len(eicarTestString))
-		source = "EICAR test string (embedded, download blocked)"
+		return fmt.Errorf("writing downloaded content: %w", err)
 	}
 
 	plan.Target = dest
-	fmt.Fprintf(stdout, "Source: %s\n", source)
+	fmt.Fprintf(stdout, "Source: %s\n", t1105URL)
 	fmt.Fprintf(stdout, "Wrote EICAR test payload (%d bytes) → %s\n", n, dest)
+	if quarantined(ctx, dest, t1105QuarantineWait) {
+		return &simulate.BlockedError{Evidence: "downloaded file was removed right after writing"}
+	}
 	return nil
+}
+
+// refusedByProxy reports HTTP statuses a filtering proxy returns when it
+// refuses a download.
+func refusedByProxy(code int) bool {
+	return code == http.StatusForbidden || code == http.StatusProxyAuthRequired || code == http.StatusUnavailableForLegalReasons
+}
+
+// downloadCut reports transport errors that mean something cut an
+// established download, as an inline antivirus or proxy does. An unreachable
+// network is not a block.
+func downloadCut(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset") || strings.Contains(msg, "forcibly closed")
+}
+
+// quarantined waits, then reports whether the file at path disappeared.
+func quarantined(ctx context.Context, path string, wait time.Duration) bool {
+	if wait > 0 {
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return false
+		}
+	}
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func cleanupT1105(plan *simulate.ExecutionPlan) error {

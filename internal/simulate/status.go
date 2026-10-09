@@ -111,3 +111,9 @@ func killedBySignal(err error) bool {
 	status, ok := exitErr.Sys().(syscall.WaitStatus)
 	return ok && status.Signaled() && status.Signal() == syscall.SIGKILL
 }
+
+// BlockedError reports that a security control stopped a technique the
+// adapter runs itself rather than through an external command.
+type BlockedError struct{ Evidence string }
+
+func (e *BlockedError) Error() string { return "blocked: " + e.Evidence }
