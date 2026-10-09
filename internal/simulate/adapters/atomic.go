@@ -139,19 +139,7 @@ func (a *atomicAdapter) Execute(ctx context.Context, plan *simulate.ExecutionPla
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
-	result := &simulate.ExecutionResult{
-		Success:   runErr == nil,
-		StartTime: start,
-		EndTime:   time.Now(),
-		Stdout:    stdout.String(),
-		Stderr:    stderr.String(),
-	}
-	if exitErr, ok := runErr.(*exec.ExitError); ok {
-		result.ExitCode = exitErr.ExitCode()
-	} else if runErr != nil {
-		result.ExitCode = -1
-	}
-	return result, nil
+	return simulate.ResultFromCommand(ctx, start, runErr, stdout.String(), stderr.String()), nil
 }
 
 func (a *atomicAdapter) Cleanup(ctx context.Context, plan *simulate.ExecutionPlan) error {

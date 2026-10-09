@@ -77,19 +77,7 @@ func (l *lsassyAdapter) Execute(ctx context.Context, plan *simulate.ExecutionPla
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	result := &simulate.ExecutionResult{
-		Success:   err == nil,
-		StartTime: start,
-		EndTime:   time.Now(),
-		Stdout:    stdout.String(),
-		Stderr:    stderr.String(),
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		result.ExitCode = exitErr.ExitCode()
-	} else if err != nil {
-		result.ExitCode = -1
-	}
-	return result, nil
+	return simulate.ResultFromCommand(ctx, start, err, stdout.String(), stderr.String()), nil
 }
 
 func (l *lsassyAdapter) Cleanup(_ context.Context, _ *simulate.ExecutionPlan) error {

@@ -101,4 +101,8 @@ type ExecutionResult struct {
 	Stdout    string
 	Stderr    string
 	ExitCode  int
+	// Status says whether the technique ran, a control stopped it, or it
+	// failed for another reason. BlockEvidence explains a blocked status.
+	Status        ExecutionStatus
+	BlockEvidence string
 }
