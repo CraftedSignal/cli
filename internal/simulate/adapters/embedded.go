@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,19 +125,27 @@ func (e *embeddedAdapter) Execute(ctx context.Context, plan *simulate.ExecutionP
 		StartTime: start,
 		EndTime:   time.Now(),
 		Stdout:    stdout.String(),
-		Status:    simulate.StatusExecuted,
 	}
 	if execErr != nil {
 		result.Stderr = execErr.Error()
 		result.ExitCode = 1
-		result.Status = simulate.StatusDidNotRun
-		var blocked *simulate.BlockedError
-		if errors.As(execErr, &blocked) {
-			result.Status = simulate.StatusBlocked
-			result.BlockEvidence = blocked.Evidence
-		}
 	}
+	result.Status, result.BlockEvidence = executionStatus(ctx, execErr)
 	return result, nil
+}
+
+// executionStatus derives an embedded technique's status from the error it
+// returned: a *simulate.BlockedError carries its own evidence, and any other
+// failure is classified like an external command's.
+func executionStatus(ctx context.Context, execErr error) (simulate.ExecutionStatus, string) {
+	if execErr == nil {
+		return simulate.StatusExecuted, ""
+	}
+	var blocked *simulate.BlockedError
+	if errors.As(execErr, &blocked) {
+		return simulate.StatusBlocked, blocked.Evidence
+	}
+	return simulate.Classify(ctx, execErr, "", "")
 }
 
 func (e *embeddedAdapter) Cleanup(ctx context.Context, plan *simulate.ExecutionPlan) error {
@@ -161,6 +170,25 @@ var t1105URL = "https://secure.eicar.org/eicar.com.txt"
 // antivirus removed the downloaded file.
 var t1105QuarantineWait = 3 * time.Second
 
+// t1105Proxy picks the proxy for T1105's download. Tests replace it, because
+// http.ProxyFromEnvironment reads the environment only once per process.
+var t1105Proxy = http.ProxyFromEnvironment
+
+// t1105Client downloads through the configured proxy. A proxy that refuses
+// the HTTPS tunnel is a block, but Go returns that refusal as a transport
+// error, so the response status check never sees it.
+func t1105Client() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = t1105Proxy
+	transport.OnProxyConnectResponse = func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
+		if refusedByProxy(res.StatusCode) {
+			return &simulate.BlockedError{Evidence: fmt.Sprintf("proxy refused the HTTPS tunnel with HTTP %d", res.StatusCode)}
+		}
+		return nil
+	}
+	return &http.Client{Transport: transport}
+}
+
 func t1105Path() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("csctl-t1105-%d", time.Now().Unix()))
 }
@@ -173,8 +201,12 @@ func executeT1105(ctx context.Context, plan *simulate.ExecutionPlan, stdout *byt
 	}
 	req.Header.Set("User-Agent", "csctl-simulation/1.0")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := t1105Client().Do(req)
 	if err != nil {
+		var blocked *simulate.BlockedError
+		if errors.As(err, &blocked) {
+			return blocked
+		}
 		if downloadCut(err) {
 			return &simulate.BlockedError{Evidence: "download connection was reset"}
 		}

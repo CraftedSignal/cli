@@ -2,8 +2,11 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,5 +72,65 @@ func TestQuarantinedDetectsARemovedFile(t *testing.T) {
 	}
 	if !quarantined(context.Background(), path, 0) {
 		t.Fatal("a removed file is quarantined")
+	}
+}
+
+func TestT1105ReportsBlockedWhenTheProxyRefusesTheTunnel(t *testing.T) {
+	// A loopback proxy that refuses every HTTPS tunnel. The download target
+	// is a reserved .invalid name, so nothing can reach a real host even if
+	// the proxy override stopped working.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			http.Error(w, "blocked by policy", http.StatusForbidden)
+			return
+		}
+		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}))
+	t.Cleanup(proxy.Close)
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldProxy, oldURL, oldWait := t1105Proxy, t1105URL, t1105QuarantineWait
+	t.Cleanup(func() { t1105Proxy, t1105URL, t1105QuarantineWait = oldProxy, oldURL, oldWait })
+	t1105Proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }
+	t1105URL, t1105QuarantineWait = "https://t1105-target.invalid/payload", 0
+	t.Setenv("TMPDIR", t.TempDir())
+
+	result, err := NewEmbedded().Execute(context.Background(), &simulate.ExecutionPlan{TechniqueID: "T1105"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Status != simulate.StatusBlocked || result.BlockEvidence == "" {
+		t.Fatalf("Status=%q evidence=%q (stderr %q), want blocked with evidence", result.Status, result.BlockEvidence, result.Stderr)
+	}
+	if files, _ := filepath.Glob(filepath.Join(os.TempDir(), "csctl-t1105-*")); len(files) != 0 {
+		t.Fatalf("a refused tunnel must not write a file, found %v", files)
+	}
+}
+
+func TestEmbeddedExecutionStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want simulate.ExecutionStatus
+	}{
+		{"success", nil, simulate.StatusExecuted},
+		{"blocked", &simulate.BlockedError{Evidence: "download refused with HTTP 403"}, simulate.StatusBlocked},
+		{"wrapped blocked", fmt.Errorf("downloading test file: %w", &simulate.BlockedError{Evidence: "x"}), simulate.StatusBlocked},
+		{"access denied while writing", fmt.Errorf("creating marker file: %w", &os.PathError{Op: "open", Path: `C:\Temp\marker`, Err: errors.New("Access is denied.")}), simulate.StatusBlocked},
+		{"missing privilege", errors.New("T1136.001 requires root privileges (run with sudo)"), simulate.StatusDidNotRun},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, evidence := executionStatus(context.Background(), tc.err)
+			if status != tc.want {
+				t.Fatalf("status = %q, want %q", status, tc.want)
+			}
+			if blocked := status == simulate.StatusBlocked; blocked != (evidence != "") {
+				t.Fatalf("evidence = %q for status %q, want evidence exactly when blocked", evidence, status)
+			}
+		})
 	}
 }
