@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/craftedsignal/cli/internal/simulate"
@@ -75,13 +76,14 @@ func TestQuarantinedDetectsARemovedFile(t *testing.T) {
 	}
 }
 
-func TestT1105ReportsBlockedWhenTheProxyRefusesTheTunnel(t *testing.T) {
-	// A loopback proxy that refuses every HTTPS tunnel. The download target
-	// is a reserved .invalid name, so nothing can reach a real host even if
-	// the proxy override stopped working.
+// useRefusingT1105Proxy routes T1105's download through a loopback proxy that
+// answers every CONNECT with status. The download target never resolves, so
+// nothing leaves the machine.
+func useRefusingT1105Proxy(t *testing.T, status int) {
+	t.Helper()
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect {
-			http.Error(w, "blocked by policy", http.StatusForbidden)
+			http.Error(w, "refused", status)
 			return
 		}
 		http.Error(w, "unexpected request", http.StatusBadRequest)
@@ -91,22 +93,34 @@ func TestT1105ReportsBlockedWhenTheProxyRefusesTheTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	oldProxy, oldURL, oldWait := t1105Proxy, t1105URL, t1105QuarantineWait
-	t.Cleanup(func() { t1105Proxy, t1105URL, t1105QuarantineWait = oldProxy, oldURL, oldWait })
-	t1105Proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }
-	t1105URL, t1105QuarantineWait = "https://t1105-target.invalid/payload", 0
+	oldURL, oldProxy, oldWait := t1105URL, t1105Proxy, t1105QuarantineWait
+	t1105URL, t1105Proxy, t1105QuarantineWait = "https://blocked.invalid/eicar.com.txt", http.ProxyURL(proxyURL), 0
+	t.Cleanup(func() { t1105URL, t1105Proxy, t1105QuarantineWait = oldURL, oldProxy, oldWait })
 	t.Setenv("TMPDIR", t.TempDir())
+}
 
+func TestT1105ReportsBlockedWhenTheProxyRefusesTheTunnel(t *testing.T) {
+	useRefusingT1105Proxy(t, http.StatusForbidden)
 	result, err := NewEmbedded().Execute(context.Background(), &simulate.ExecutionPlan{TechniqueID: "T1105"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if result.Status != simulate.StatusBlocked || result.BlockEvidence == "" {
-		t.Fatalf("Status=%q evidence=%q (stderr %q), want blocked with evidence", result.Status, result.BlockEvidence, result.Stderr)
+	if result.Status != simulate.StatusBlocked || !strings.Contains(result.BlockEvidence, "403") {
+		t.Fatalf("Status=%q evidence=%q, want blocked citing HTTP 403", result.Status, result.BlockEvidence)
 	}
 	if files, _ := filepath.Glob(filepath.Join(os.TempDir(), "csctl-t1105-*")); len(files) != 0 {
-		t.Fatalf("a refused tunnel must not write a file, found %v", files)
+		t.Fatalf("a refused download must not write a file, found %v", files)
+	}
+}
+
+func TestT1105TreatsProxyAuthenticationAsDidNotRun(t *testing.T) {
+	useRefusingT1105Proxy(t, http.StatusProxyAuthRequired)
+	result, err := NewEmbedded().Execute(context.Background(), &simulate.ExecutionPlan{TechniqueID: "T1105"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Status != simulate.StatusDidNotRun {
+		t.Fatalf("Status=%q, want did_not_run: missing proxy credentials say nothing about a control", result.Status)
 	}
 }
 
@@ -124,12 +138,12 @@ func TestEmbeddedExecutionStatus(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, evidence := executionStatus(context.Background(), tc.err)
-			if status != tc.want {
-				t.Fatalf("status = %q, want %q", status, tc.want)
+			got, evidence := executionStatus(context.Background(), tc.err)
+			if got != tc.want {
+				t.Fatalf("executionStatus() = %q, want %q", got, tc.want)
 			}
-			if blocked := status == simulate.StatusBlocked; blocked != (evidence != "") {
-				t.Fatalf("evidence = %q for status %q, want evidence exactly when blocked", evidence, status)
+			if got == simulate.StatusBlocked && evidence == "" {
+				t.Fatal("a blocked status must carry evidence")
 			}
 		})
 	}

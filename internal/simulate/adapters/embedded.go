@@ -182,7 +182,7 @@ func t1105Client() *http.Client {
 	transport.Proxy = t1105Proxy
 	transport.OnProxyConnectResponse = func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
 		if refusedByProxy(res.StatusCode) {
-			return &simulate.BlockedError{Evidence: fmt.Sprintf("proxy refused the HTTPS tunnel with HTTP %d", res.StatusCode)}
+			return &simulate.BlockedError{Evidence: fmt.Sprintf("proxy refused the download tunnel with HTTP %d", res.StatusCode)}
 		}
 		return nil
 	}
@@ -245,9 +245,12 @@ func executeT1105(ctx context.Context, plan *simulate.ExecutionPlan, stdout *byt
 }
 
 // refusedByProxy reports HTTP statuses a filtering proxy returns when it
-// refuses a download.
+// refuses a download. 407 (proxy authentication required) is left out:
+// a real implant reuses the signed-in user's proxy credentials, so csctl
+// failing to authenticate says nothing about whether a control would stop
+// the download.
 func refusedByProxy(code int) bool {
-	return code == http.StatusForbidden || code == http.StatusProxyAuthRequired || code == http.StatusUnavailableForLegalReasons
+	return code == http.StatusForbidden || code == http.StatusUnavailableForLegalReasons
 }
 
 // downloadCut reports transport errors that mean something cut an
