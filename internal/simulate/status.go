@@ -19,8 +19,10 @@ const (
 	StatusDidNotRun ExecutionStatus = "did_not_run"
 )
 
-// blockMarkers are output fragments that mean a security control stopped the
-// technique, as opposed to a missing tool or a missing privilege.
+// blockMarkers are output fragments that usually mean a security control
+// stopped the technique. Access-denied text can also mean a missing privilege
+// or failed credentials, so the evidence quotes the matching line for the
+// person who confirms the outcome.
 var blockMarkers = []string{
 	"access is denied",
 	"access denied",
@@ -38,8 +40,16 @@ func Classify(ctx context.Context, runErr error, stdout, stderr string) (Executi
 	if ctx.Err() != nil {
 		return StatusDidNotRun, ""
 	}
-	if marker, ok := findBlockMarker(stdout + "\n" + stderr); ok {
-		return StatusBlocked, "output: " + marker
+	if line, ok := findBlockLine(stdout + "\n" + stderr); ok {
+		return StatusBlocked, "output: " + line
+	}
+	if runErr != nil {
+		// A control that refuses to launch the tool shows up only in the
+		// launch error, e.g. "fork/exec mimikatz.exe: Operation did not
+		// complete successfully because the file contains a virus ...".
+		if line, ok := findBlockLine(runErr.Error()); ok {
+			return StatusBlocked, "error: " + line
+		}
 	}
 	if runErr == nil {
 		return StatusExecuted, ""
@@ -70,11 +80,22 @@ func ResultFromCommand(ctx context.Context, start time.Time, runErr error, stdou
 	return result
 }
 
-func findBlockMarker(output string) (string, bool) {
-	lower := strings.ToLower(output)
-	for _, marker := range blockMarkers {
-		if strings.Contains(lower, marker) {
-			return marker, true
+// maxEvidenceLine caps the output line quoted as block evidence.
+const maxEvidenceLine = 200
+
+// findBlockLine returns the first line of output that contains a block
+// marker, trimmed and capped at maxEvidenceLine characters.
+func findBlockLine(output string) (string, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		lower := strings.ToLower(line)
+		for _, marker := range blockMarkers {
+			if strings.Contains(lower, marker) {
+				line = strings.TrimSpace(line)
+				if r := []rune(line); len(r) > maxEvidenceLine {
+					line = string(r[:maxEvidenceLine])
+				}
+				return line, true
+			}
 		}
 	}
 	return "", false

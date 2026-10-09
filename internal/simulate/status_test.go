@@ -3,6 +3,8 @@ package simulate
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +26,12 @@ func TestClassify(t *testing.T) {
 		{"windows access denied", context.Background(), errors.New("exit status 1"), "", "Access is denied.", StatusBlocked},
 		{"defender virus message", context.Background(), errors.New("exit status 1"), "",
 			"Operation did not complete successfully because the file contains a virus or potentially unwanted software.", StatusBlocked},
+		{"launch refused by antivirus", context.Background(),
+			&os.PathError{Op: "fork/exec", Path: `C:\tools\mimikatz.exe`, Err: errors.New("Operation did not complete successfully because the file contains a virus or potentially unwanted software.")},
+			"", "", StatusBlocked},
+		{"launch blocked by group policy", context.Background(),
+			&os.PathError{Op: "fork/exec", Path: `C:\tools\mimikatz.exe`, Err: errors.New("This program is blocked by group policy. For more information, contact your system administrator.")},
+			"", "", StatusBlocked},
 		{"missing tool", context.Background(), errors.New(`exec: "mimikatz.exe": executable file not found in %PATH%`), "", "", StatusDidNotRun},
 		{"timed out", cancelled, errors.New("signal: killed"), "", "", StatusDidNotRun},
 	}
@@ -37,5 +45,12 @@ func TestClassify(t *testing.T) {
 				t.Fatal("a blocked run must carry evidence")
 			}
 		})
+	}
+}
+
+func TestClassifyQuotesTheMatchingLineAsEvidence(t *testing.T) {
+	status, evidence := Classify(context.Background(), errors.New("exit status 1"), "step 1 ok\n", "net user: Access is denied.\nmore output")
+	if status != StatusBlocked || !strings.Contains(evidence, "net user: Access is denied.") {
+		t.Fatalf("Classify() = %q, %q; want blocked quoting the matching line", status, evidence)
 	}
 }
