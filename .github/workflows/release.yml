@@ -44,7 +44,7 @@ jobs:
           node-version: "22"
 
       - name: Install semantic-release
-        run: npm install --no-save semantic-release@24 @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
+        run: npm install --no-save semantic-release@24 @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits@9
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8
@@ -57,8 +57,10 @@ jobs:
         uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90
         with:
           semantic_version: 24
+          # Preset 10 needs conventional-changelog-writer 9, but semantic-release
+          # 24's notes generator ships writer 8 and is tested with preset 9.
           extra_plugins: |
-            conventional-changelog-conventionalcommits
+            conventional-changelog-conventionalcommits@9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
