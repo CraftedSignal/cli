@@ -40,9 +40,11 @@ updates:
           - "minor"
           - "patch"
 
-  # Go version Dockerfile (used by CI workflows)
+  # Release image and Go toolchain images
   - package-ecosystem: "docker"
-    directory: "/.github/go"
+    directories:
+      - "/.github"
+      - "/.github/go"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -50,7 +52,7 @@ updates:
       timezone: "UTC"
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(go):"
+      prefix: "chore(images):"
     groups:
       go-docker-minor-patch:
         patterns:
