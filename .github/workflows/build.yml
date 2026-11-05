@@ -50,7 +50,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: ${{ needs.get-go-version.outputs.go_version }}
-          cache: true
+          cache: false
 
       - name: Download Go modules
         run: go mod download
