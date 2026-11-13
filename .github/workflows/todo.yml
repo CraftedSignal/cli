@@ -9,6 +9,10 @@ permissions:
   issues: write
   contents: read
 
+concurrency:
+  group: todo-maintenance
+  cancel-in-progress: false
+
 jobs:
   todo:
     name: Create Issues from TODOs

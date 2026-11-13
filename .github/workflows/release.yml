@@ -5,19 +5,27 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  validate-test:
+    name: Validate test
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+
   release:
+    needs: [validate-test]
     name: Release
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
