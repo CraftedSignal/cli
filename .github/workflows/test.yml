@@ -1,8 +1,9 @@
 name: Test
 
 on:
+  workflow_call:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
     branches: [main, master]
 
@@ -74,3 +75,23 @@ jobs:
         with:
           version: v2.12.2
           skip-cache: true
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Get Go version
+        id: vars
+        run: |
+          goVersion=$(grep '^FROM golang' .github/go/Dockerfile | cut -d ':' -f 2 | cut -d '-' -f 1)
+          echo "go_version=${goVersion}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: ${{ steps.vars.outputs.go_version }}
+          cache: false
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
