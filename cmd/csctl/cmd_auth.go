@@ -19,7 +19,7 @@ func cmdAuth(url, token string, args []string, clientOpts []craftedsignal.Option
 	}
 	if url == "" || token == "" {
 		fmt.Println("Not configured")
-		fmt.Println("Set URL in .csctl.yaml and token in CSCTL_TOKEN env var")
+		fmt.Println("Set CSCTL_TOKEN and, for a self-hosted instance, CSCTL_URL or --url")
 		return ExitSuccess
 	}
 

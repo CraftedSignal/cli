@@ -59,7 +59,7 @@ func cmdInit(url, token string, args []string, clientOpts []craftedsignal.Option
 
 	if _, err := os.Stat(".csctl.yaml"); os.IsNotExist(err) {
 		configContent := `# CraftedSignal CLI Configuration
-# url: https://app.craftedsignal.io  # (default, uncomment to override)
+# Connection settings: use CSCTL_URL/CSCTL_TOKEN or select a reviewed file with --config.
 
 defaults:
   path: detections/
@@ -72,6 +72,6 @@ defaults:
 		fmt.Println("  Created .csctl.yaml")
 	}
 
-	fmt.Println("\nInitialized! Set CSCTL_TOKEN and update .csctl.yaml with your instance URL.")
+	fmt.Println("\nInitialized! Set CSCTL_TOKEN; use CSCTL_URL or --url for a self-hosted instance.")
 	return ExitSuccess
 }
