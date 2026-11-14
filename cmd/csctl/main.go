@@ -106,11 +106,8 @@ Examples:
 	// Load config
 	cfg, err := config.LoadFromPath(*configFlag)
 	if err != nil {
-		if *configFlag != "" {
-			fmt.Fprintf(os.Stderr, "Error: failed to load config file %s: %v\n", *configFlag, err)
-			os.Exit(ExitError)
-		}
-		logger.Warn("could not load config", slog.Any("error", err))
+		fmt.Fprintf(os.Stderr, "Error: failed to load config: %v\n", err)
+		os.Exit(ExitError)
 	}
 
 	// Resolve URL, token, and insecure from flags or config
@@ -128,10 +125,7 @@ Examples:
 	}
 
 	// Config insecure can be overridden by flag
-	insecure := *insecureFlag
-	if !insecure && cfg != nil {
-		insecure = cfg.Insecure
-	}
+	insecure := resolveInsecure(flag.CommandLine, *insecureFlag, cfg)
 
 	// Get command
 	args := flag.Args()
@@ -195,4 +189,18 @@ Examples:
 	}
 
 	os.Exit(exitCode)
+}
+
+func resolveInsecure(flags *flag.FlagSet, value bool, cfg *config.Config) bool {
+	// Preserve the distinction between an omitted flag and --insecure=false.
+	set := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "insecure" {
+			set = true
+		}
+	})
+	if set || cfg == nil {
+		return value
+	}
+	return cfg.Insecure
 }

@@ -19,18 +19,27 @@ go install github.com/craftedsignal/cli/cmd/csctl@latest
 Create `.csctl.yaml` in your repository root:
 
 ```yaml
-# if not using CraftedSignal SaaS, specify your endpoint
-url: https://your-craftedsignal-instance.com
-
-# your API token (or use env variable CSCTL_TOKEN)
-token: ""
-
 defaults:
   # the directory of your ruleset to sync
   path: detections/
   # default platform to assume for rules
   platform: splunk
 ```
+
+Automatically discovered project files provide defaults only. Set your connection
+with `CSCTL_URL` (or `--url`) and `CSCTL_TOKEN`. The default URL is
+`https://app.craftedsignal.io`. A project file containing `url`, a non-empty
+`token`, or `insecure: true` stops the command before a client is created.
+
+To use connection settings from a file, review it and select it explicitly:
+
+```bash
+csctl --config ~/.config/csctl.yaml push
+```
+
+Explicit files can contain `url`, `token`, and `insecure`; environment variables
+override those values. Keep credentials out of version control and restrict a
+credential-bearing file to mode `0600`.
 
 ## Usage
 
@@ -286,6 +295,9 @@ To skip TLS certificate verification (for self-signed certs):
 ```bash
 csctl -insecure push
 ```
+
+`--insecure=false` explicitly enables certificate verification, including when
+an explicitly selected config file or `CSCTL_INSECURE` has disabled it.
 
 ## CI/CD Integration
 
