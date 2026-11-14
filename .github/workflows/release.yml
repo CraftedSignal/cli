@@ -28,6 +28,7 @@ jobs:
       packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: public-release
     outputs:
       version: ${{ steps.semver.outputs.version }}
       new_release: ${{ steps.semver.outputs.new_release_published }}
