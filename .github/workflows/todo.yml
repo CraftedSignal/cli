@@ -9,10 +9,15 @@ permissions:
   issues: write
   contents: read
 
+concurrency:
+  group: todo-maintenance
+  cancel-in-progress: false
+
 jobs:
   todo:
     name: Create Issues from TODOs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

@@ -189,7 +189,7 @@ func syncLibraryFile(url, token, path, message string, atomic *bool, clientOpts 
 
 func newLibraryClient(url, token string, clientOpts []api.ClientOption) (*api.Client, bool) {
 	if url == "" || token == "" {
-		_, _ = fmt.Fprintln(errOut, "Error: URL and token required (set via .csctl.yaml and CSCTL_TOKEN)")
+		_, _ = fmt.Fprintln(errOut, "Error: URL and token required (set CSCTL_URL/--url and CSCTL_TOKEN, or explicitly select a reviewed file with --config)")
 		return nil, false
 	}
 	return api.NewClient(strings.TrimRight(url, "/"), token, clientOpts...), true

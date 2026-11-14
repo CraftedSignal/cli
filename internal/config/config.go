@@ -20,7 +20,9 @@ type Config struct {
 	} `yaml:"defaults"`
 }
 
-// Load reads configuration from .csctl.yaml and environment variables.
+// Load reads project defaults from .csctl.yaml and connection settings from
+// environment variables. Implicit project files cannot select a credential
+// destination or disable TLS verification.
 // Environment variables take precedence over file configuration.
 // Supported env vars: CSCTL_URL, CSCTL_TOKEN, CSCTL_INSECURE, CSCTL_PATH, CSCTL_PLATFORM
 func Load() (*Config, error) {
@@ -28,7 +30,9 @@ func Load() (*Config, error) {
 }
 
 // LoadFromPath reads configuration from a specific file and environment variables.
-// If configPath is empty, it searches for .csctl.yaml in current and parent directories.
+// If configPath is empty, it searches for project defaults in .csctl.yaml in the
+// current and parent directories. Connection settings require an explicitly
+// selected file, environment variables, or command-line flags.
 // Environment variables take precedence over file configuration.
 func LoadFromPath(configPath string) (*Config, error) {
 	cfg := &Config{}
@@ -49,6 +53,9 @@ func LoadFromPath(configPath string) (*Config, error) {
 		}
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
+		}
+		if configPath == "" && (cfg.URL != "" || cfg.Token != "" || cfg.Insecure) {
+			return nil, fmt.Errorf("automatically discovered config %s contains connection settings; review the file and select it explicitly with --config, or move url/token/insecure to flags or CSCTL environment variables", path)
 		}
 
 		// Warn if token is stored in config file (should use CSCTL_TOKEN env var)
