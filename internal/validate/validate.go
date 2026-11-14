@@ -164,6 +164,9 @@ func parseQuery(res *Result, query, platform, file, title string) {
 	case "splunk", "spl":
 		result := spl.ExtractConditions(query)
 		parseErrors = result.Errors
+		for _, warning := range result.Warnings {
+			res.addWarning(file, title, "query", warning)
+		}
 		addSPLWarnings(res, result, query, file, title)
 	case "sentinel", "kql":
 		result := kql.ExtractConditions(query)
@@ -212,6 +215,7 @@ func ValidateAll(rules []LoadedDetection) *Result {
 	for _, r := range rules {
 		sub := ValidateRule(r.Rule, r.File)
 		combined.Errors = append(combined.Errors, sub.Errors...)
+		combined.Warnings = append(combined.Warnings, sub.Warnings...)
 	}
 	return combined
 }

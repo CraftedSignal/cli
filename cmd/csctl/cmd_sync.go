@@ -179,6 +179,7 @@ func cmdSync(url, token string, args []string, cfg *config.Config, clientOpts []
 	// Validate rules to push
 	if len(pushRules) > 0 {
 		vResult := validateRules(pushRules)
+		reportValidationWarnings(vResult)
 		if !vResult.Valid() {
 			_, _ = fmt.Fprintln(errOut, "Validation errors:")
 			for _, e := range vResult.Errors {
