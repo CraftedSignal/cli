@@ -68,7 +68,7 @@ jobs:
 
       - name: Semantic Version
         id: semver
-        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90
+        uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e
         with:
           semantic_version: 24
           # Preset 10 needs conventional-changelog-writer 9, but semantic-release
