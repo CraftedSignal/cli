@@ -241,6 +241,12 @@ func validateRules(rules []internalyaml.LoadedRule) *validate.Result {
 	return validate.ValidateAll(loaded)
 }
 
+func reportValidationWarnings(result *validate.Result) {
+	for _, warning := range result.Warnings {
+		_, _ = fmt.Fprintf(errOut, "  Warning: %s\n", warning)
+	}
+}
+
 // getFileMtime returns the modification time of a file, or zero time on error.
 func getFileMtime(path string) time.Time {
 	info, err := os.Stat(path)

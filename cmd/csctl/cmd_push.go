@@ -91,6 +91,7 @@ func cmdPush(url, token string, args []string, cfg *config.Config, clientOpts []
 	// Validate only changed rules
 	if len(changedRules) > 0 {
 		vResult := validateRules(changedRules)
+		reportValidationWarnings(vResult)
 		if !vResult.Valid() {
 			_, _ = fmt.Fprintln(errOut, "Validation errors:")
 			for _, e := range vResult.Errors {
