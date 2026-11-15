@@ -167,10 +167,16 @@ func parseQuery(res *Result, query, platform, file, title string) {
 		for _, warning := range result.Warnings {
 			res.addWarning(file, title, "query", warning)
 		}
+		if len(parseErrors) == 0 && hasOpaqueSPLFilter(result) {
+			res.addWarning(file, title, "query", "SPL filter contains an opaque predicate; local validation is incomplete")
+		}
 		addSPLWarnings(res, result, query, file, title)
 	case "sentinel", "kql":
 		result := kql.ExtractConditions(query)
 		parseErrors = result.Errors
+		if len(parseErrors) == 0 && hasOpaqueKQLFilter(result) {
+			res.addWarning(file, title, "query", "KQL filter contains an opaque predicate; local validation is incomplete")
+		}
 	case "rapid7", "leql", "insightidr":
 		result := leql.ExtractConditions(query)
 		parseErrors = result.Errors
@@ -182,6 +188,73 @@ func parseQuery(res *Result, query, platform, file, title string) {
 	for _, e := range parseErrors {
 		res.add(file, title, "query", fmt.Sprintf("parse error: %s", e))
 	}
+}
+
+func hasOpaqueKQLFilter(result *kql.ParseResult) bool {
+	if result == nil {
+		return false
+	}
+	if hasOpaqueKQLExpression(result.Expression) {
+		return true
+	}
+	for _, join := range result.Joins {
+		if hasOpaqueKQLFilter(join.Subsearch) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOpaqueKQLExpression(expr *kql.ConditionExpression) bool {
+	if expr == nil {
+		return false
+	}
+	if expr.Operator == kql.BooleanScalar || expr.Operator == kql.BooleanSearch {
+		return true
+	}
+	for _, child := range expr.Children {
+		if hasOpaqueKQLExpression(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOpaqueSPLFilter(result *spl.ParseResult) bool {
+	if result == nil || len(result.Errors) != 0 {
+		return false
+	}
+	// An incomplete parent expression can still contain a separately parsed
+	// subsearch whose scalar leaf is complete.
+	if !result.ExpressionIncomplete && hasOpaqueSPLExpression(result.Expression) {
+		return true
+	}
+	for _, subsearch := range result.Subsearches {
+		if hasOpaqueSPLFilter(subsearch) {
+			return true
+		}
+	}
+	for _, join := range result.Joins {
+		if hasOpaqueSPLFilter(join.Subsearch) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOpaqueSPLExpression(expr *spl.ConditionExpression) bool {
+	if expr == nil {
+		return false
+	}
+	if expr.Operator == spl.BooleanScalar && expr.Scalar != nil {
+		return true
+	}
+	for _, child := range expr.Children {
+		if hasOpaqueSPLExpression(child) {
+			return true
+		}
+	}
+	return false
 }
 
 // addSPLWarnings adds non-blocking warnings based on SPL parse results.

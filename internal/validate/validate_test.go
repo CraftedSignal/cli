@@ -73,7 +73,11 @@ func TestParserAdoptionQueryDiagnostics(t *testing.T) {
 		name, platform, query string
 		valid, warning        bool
 	}{
-		{"KQL scalar", "sentinel", `Events | where 5 > 10`, true, false},
+		{"KQL scalar", "sentinel", `Events | where 5 > 10`, true, true},
+		{"KQL mixed scalar", "sentinel", `Events | where EventID == 1 and strlen(Account) > 3`, true, true},
+		{"KQL search", "sentinel", `Events | search "mimikatz"`, true, true},
+		{"KQL joined scalar", "sentinel", `Events | join kind=inner (OtherEvents | where strlen(Account) > 3) on Account`, true, true},
+		{"KQL supported", "sentinel", `Events | where EventID == 1`, true, false},
 		{"LEQL loose", "rapid7", `where(user=admin, loose)`, true, false},
 		{"SPL incomplete Boolean", "splunk", `search * | where x="u" OR (x="v" AND len(y)>2)`, true, true},
 		{"invalid KQL", "sentinel", `Events | where (`, false, false},
@@ -98,5 +102,60 @@ func TestParserAdoptionValidateAllRetainsWarnings(t *testing.T) {
 	result := ValidateAll([]LoadedDetection{{File: "opaque.yaml", Rule: craftedsignal.Detection{Title: "Opaque", Platform: "splunk", Query: query}}})
 	if !result.Valid() || len(result.Warnings) == 0 || result.Warnings[0].File != "opaque.yaml" {
 		t.Fatalf("non-blocking warning lost before push/sync preflight: %+v", result)
+	}
+}
+
+func TestParserAdoptionKQLWarningsRetainSource(t *testing.T) {
+	result := ValidateAll([]LoadedDetection{{File: "opaque-kql.yaml", Rule: craftedsignal.Detection{
+		Title: "Opaque KQL", Platform: "sentinel", Query: `Events | where EventID == 1 and strlen(Account) > 3`,
+	}}})
+	if !result.Valid() || len(result.Warnings) != 1 {
+		t.Fatalf("valid opaque KQL must carry one non-blocking warning: %+v", result)
+	}
+	warning := result.Warnings[0]
+	if warning.File != "opaque-kql.yaml" || warning.Title != "Opaque KQL" || warning.Field != "query" || !strings.Contains(warning.Message, "incomplete") {
+		t.Fatalf("KQL preflight warning lost attribution or meaning: %+v", warning)
+	}
+}
+
+func TestSPLScalarAssessabilityWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name, query string
+		valid       bool
+		opaque      bool
+	}{
+		{"numeric predicate", `| where x>42`, true, false},
+		{"quoted predicate", `| where x>"42"`, true, false},
+		{"search predicate", `search x=y`, true, false},
+		{"adjacent wildcard predicates", `search user=* action=*`, true, false},
+		{"scalar only", `| where 5<10`, true, true},
+		{"multiple scalar leaves", `| where 5<10 OR 8>4`, true, true},
+		{"computed scalar", `| where x+1>42`, true, true},
+		{"mixed scalar", `| where NOT (5<10) OR x="a"`, true, true},
+		{"direct subsearch scalar", `search x=y [ search a=b | where 5<10 ]`, true, true},
+		{"nested append scalar", `search x=y | append [ search a=b | where 5<10 ]`, true, true},
+		{"nested join scalar", `search x=y | join x [ search a=b | where 5<10 ]`, true, true},
+		{"malformed predicate", `| where x >`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ValidateAll([]LoadedDetection{{File: "rules/scalar.yaml", Rule: craftedsignal.Detection{
+				Title: "Scalar", Platform: "splunk", Query: tc.query,
+			}}})
+			if result.Valid() != tc.valid {
+				t.Fatalf("valid=%v, want %v: errors=%#v warnings=%#v", result.Valid(), tc.valid, result.Errors, result.Warnings)
+			}
+			opaque := 0
+			for _, warning := range result.Warnings {
+				if warning.File != "rules/scalar.yaml" || warning.Title != "Scalar" || warning.Field != "query" {
+					t.Errorf("warning lost file attribution: %#v", warning)
+				}
+				if strings.Contains(warning.Message, "opaque") && strings.Contains(warning.Message, "incomplete") {
+					opaque++
+				}
+			}
+			if (opaque == 1) != tc.opaque || opaque > 1 {
+				t.Fatalf("opaque assessability warnings=%d, want one=%v: %#v", opaque, tc.opaque, result.Warnings)
+			}
+		})
 	}
 }
