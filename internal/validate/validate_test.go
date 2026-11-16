@@ -1,10 +1,13 @@
 package validate
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	kql "github.com/craftedsignal/kql-parser"
 	craftedsignal "github.com/craftedsignal/sdk-go"
+	spl "github.com/craftedsignal/spl-parser"
 )
 
 func TestValidateRuleRequiredFieldsAndMetadata(t *testing.T) {
@@ -157,5 +160,126 @@ func TestSPLScalarAssessabilityWarning(t *testing.T) {
 				t.Fatalf("opaque assessability warnings=%d, want one=%v: %#v", opaque, tc.opaque, result.Warnings)
 			}
 		})
+	}
+}
+
+func TestWave2KQLRootDiagnosticsWithoutScalar(t *testing.T) {
+	const query = `Events | parse raw with prefix ':' parsed | where EventID == 1`
+	parsed := kql.ExtractConditions(query)
+	wantMessages := []string{
+		"dataflow:unsupported_stage_dataflow: removed parse stage has unrepresented output",
+		"dataflow:unresolved_field_binding: field EventID cannot be resolved in s1",
+	}
+	if len(parsed.Errors) != 0 || !reflect.DeepEqual(parsed.Warnings, wantMessages) || parsed.Expression == nil || parsed.Expression.Operator != kql.BooleanCondition {
+		t.Fatalf("fixture must have real parser warnings without scalar: warnings=%q errors=%q expression=%#v", parsed.Warnings, parsed.Errors, parsed.Expression)
+	}
+	rule := craftedsignal.Detection{Title: "Opaque stage", Platform: "sentinel", Query: query}
+	result := ValidateRule(rule, "rules/opaque-kql.yaml")
+	if !result.Valid() || rule.Query != query {
+		t.Fatalf("valid opaque query changed or failed: rule=%+v result=%+v", rule, result)
+	}
+	want := []ValidationWarning{
+		{File: "rules/opaque-kql.yaml", Title: "Opaque stage", Field: "query", Message: wantMessages[0]},
+		{File: "rules/opaque-kql.yaml", Title: "Opaque stage", Field: "query", Message: wantMessages[1]},
+	}
+	if !reflect.DeepEqual(result.Warnings, want) {
+		t.Fatalf("KQL parser warnings lost text or attribution: got=%+v want=%+v", result.Warnings, want)
+	}
+	ordinary := ValidateRule(craftedsignal.Detection{Title: "Ordinary", Platform: "sentinel", Query: `Events | where EventID == 1`}, "rules/ordinary.yaml")
+	if !ordinary.Valid() || len(ordinary.Warnings) != 0 {
+		t.Fatalf("ordinary query gained diagnostics: %+v", ordinary)
+	}
+}
+
+func TestWave2OrdinarySPLHasNoWarning(t *testing.T) {
+	result := ValidateRule(craftedsignal.Detection{Title: "Ordinary SPL", Platform: "splunk", Query: `search x=y`}, "rules/ordinary-spl.yaml")
+	if !result.Valid() || len(result.Warnings) != 0 {
+		t.Fatalf("ordinary SPL query gained diagnostics: %+v", result)
+	}
+}
+
+func TestWave2KQLJoinChildDiagnostics(t *testing.T) {
+	const query = `Events | join kind=inner (OtherEvents | parse raw with prefix ':' parsed | where EventID == 1) on Account`
+	parsed := kql.ExtractConditions(query)
+	if len(parsed.Errors) != 0 || len(parsed.Joins) != 1 || parsed.Joins[0].Subsearch == nil || len(parsed.Joins[0].Subsearch.Warnings) != 2 {
+		t.Fatalf("fixture needs an independently returned warning child: %+v", parsed)
+	}
+	result := ValidateRule(craftedsignal.Detection{Title: "Join child", Platform: "sentinel", Query: query}, "rules/join.yaml")
+	want := []ValidationWarning{
+		{File: "rules/join.yaml", Title: "Join child", Field: "query", Message: "dataflow:unsupported_stage_dataflow: unrepresented join output"},
+		{File: "rules/join.yaml", Title: "Join child", Field: "query", Message: "dataflow:unsupported_stage_dataflow: removed parse stage has unrepresented output"},
+		{File: "rules/join.yaml", Title: "Join child", Field: "query", Message: "dataflow:unresolved_field_binding: field EventID cannot be resolved in s1"},
+	}
+	if !result.Valid() || !reflect.DeepEqual(result.Warnings, want) {
+		t.Fatalf("KQL join diagnostics lost child or parent attribution: got=%+v want=%+v", result, want)
+	}
+}
+
+func TestWave2SPLJoinChildWarningDeduplicated(t *testing.T) {
+	const query = `search x=a | join user [ search z=a | mystery y ]`
+	parsed := spl.ExtractConditions(query)
+	if len(parsed.Errors) != 0 || len(parsed.Joins) != 1 || parsed.Joins[0].Subsearch == nil || len(parsed.Subsearches) != 1 ||
+		!reflect.DeepEqual(parsed.Joins[0].Subsearch.Warnings, parsed.Subsearches[0].Warnings) {
+		t.Fatalf("fixture needs join and compatibility child warnings: %+v", parsed)
+	}
+	result := ValidateRule(craftedsignal.Detection{Title: "Join child", Platform: "splunk", Query: query}, "rules/join-spl.yaml")
+	want := []ValidationWarning{
+		{File: "rules/join-spl.yaml", Title: "Join child", Field: "query", Message: "dataflow:unsupported_stage_dataflow: unsupported field scope for join"},
+		{File: "rules/join-spl.yaml", Title: "Join child", Field: "query", Message: "boolean expression unavailable: query contains an unsupported or unrepresented boolean operand"},
+		{File: "rules/join-spl.yaml", Title: "Join child", Field: "query", Message: "uses join command — may impact test generation accuracy"},
+	}
+	if !result.Valid() || !reflect.DeepEqual(result.Warnings, want) {
+		t.Fatalf("SPL duplicate child warning was lost or repeated: got=%+v want=%+v", result, want)
+	}
+}
+
+func TestWave2SameWarningKeptForEachFile(t *testing.T) {
+	const query = `Events | parse raw with prefix ':' parsed | where EventID == 1`
+	result := ValidateAll([]LoadedDetection{
+		{File: "rules/one.yaml", Rule: craftedsignal.Detection{Title: "One", Platform: "sentinel", Query: query}},
+		{File: "rules/two.yaml", Rule: craftedsignal.Detection{Title: "Two", Platform: "sentinel", Query: query}},
+	})
+	if !result.Valid() || len(result.Warnings) != 4 {
+		t.Fatalf("each file should retain its two parser warnings: %+v", result)
+	}
+	for i, want := range []struct{ file, title, message string }{
+		{"rules/one.yaml", "One", "dataflow:unsupported_stage_dataflow: removed parse stage has unrepresented output"},
+		{"rules/one.yaml", "One", "dataflow:unresolved_field_binding: field EventID cannot be resolved in s1"},
+		{"rules/two.yaml", "Two", "dataflow:unsupported_stage_dataflow: removed parse stage has unrepresented output"},
+		{"rules/two.yaml", "Two", "dataflow:unresolved_field_binding: field EventID cannot be resolved in s1"},
+	} {
+		got := result.Warnings[i]
+		if got.File != want.file || got.Title != want.title || got.Field != "query" || got.Message != want.message {
+			t.Fatalf("warning %d lost exact per-file attribution: %+v want=%+v", i, got, want)
+		}
+	}
+}
+
+func TestWave2SyntaxAndSourceFailuresRemainInvalid(t *testing.T) {
+	for _, tc := range []struct{ name, platform, query, message string }{
+		{"KQL source", "sentinel", `Events | join kind=inner (OtherEvents | where () on Account`, "parse error: dataflow source unavailable: join child has no authored owner"},
+		{"KQL syntax", "sentinel", `Events | where (`, "parse error: no viable alternative at input '('"},
+		{"SPL syntax", "splunk", `| where (`, "parse error: mismatched input '<EOF>' expecting {NOT, EVAL, FROM, MSTATS, INPUTLOOKUP, LIKE, MATCH, CIDRMATCH, ISNOTNULL, ISNULL, '(', '[', '-', QUOTED_STRING, TIME_SPAN, NUMBER, '*', TEMPLATE_VAR, IDENTIFIER}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ValidateRule(craftedsignal.Detection{Title: "Bad query", Platform: tc.platform, Query: tc.query}, "rules/bad.yaml")
+			want := []ValidationError{{File: "rules/bad.yaml", Title: "Bad query", Field: "query", Message: tc.message}}
+			if result.Valid() || !reflect.DeepEqual(result.Errors, want) {
+				t.Fatalf("parser failure must invalidate exact source: got=%+v want=%+v", result, want)
+			}
+		})
+	}
+}
+
+func TestWave2CollectorsKeepChildErrorsWhenRootHasNone(t *testing.T) {
+	kqlRoot := &kql.ParseResult{Joins: []kql.JoinInfo{{Subsearch: &kql.ParseResult{Errors: []string{"child KQL failure"}}}}}
+	_, kqlErrors := collectKQLDiagnostics(kqlRoot)
+	if !reflect.DeepEqual(kqlErrors, []string{"child KQL failure"}) {
+		t.Fatalf("KQL child failure lost: %q", kqlErrors)
+	}
+	splRoot := &spl.ParseResult{Joins: []spl.JoinInfo{{Subsearch: &spl.ParseResult{Errors: []string{"child SPL failure"}}}}}
+	_, splErrors := collectSPLDiagnostics(splRoot)
+	if !reflect.DeepEqual(splErrors, []string{"child SPL failure"}) {
+		t.Fatalf("SPL child failure lost: %q", splErrors)
 	}
 }

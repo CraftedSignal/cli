@@ -159,12 +159,14 @@ func ValidateRule(r craftedsignal.Detection, file string) *Result {
 // parseQuery runs platform-specific ANTLR parsers to validate query syntax.
 func parseQuery(res *Result, query, platform, file, title string) {
 	var parseErrors []string
+	warningStart := len(res.Warnings)
 
 	switch platform {
 	case "splunk", "spl":
 		result := spl.ExtractConditions(query)
-		parseErrors = result.Errors
-		for _, warning := range result.Warnings {
+		warnings, errors := collectSPLDiagnostics(result)
+		parseErrors = errors
+		for _, warning := range warnings {
 			res.addWarning(file, title, "query", warning)
 		}
 		if len(parseErrors) == 0 && hasOpaqueSPLFilter(result) {
@@ -173,7 +175,11 @@ func parseQuery(res *Result, query, platform, file, title string) {
 		addSPLWarnings(res, result, query, file, title)
 	case "sentinel", "kql":
 		result := kql.ExtractConditions(query)
-		parseErrors = result.Errors
+		warnings, errors := collectKQLDiagnostics(result)
+		parseErrors = errors
+		for _, warning := range warnings {
+			res.addWarning(file, title, "query", warning)
+		}
 		if len(parseErrors) == 0 && hasOpaqueKQLFilter(result) {
 			res.addWarning(file, title, "query", "KQL filter contains an opaque predicate; local validation is incomplete")
 		}
@@ -188,6 +194,52 @@ func parseQuery(res *Result, query, platform, file, title string) {
 	for _, e := range parseErrors {
 		res.add(file, title, "query", fmt.Sprintf("parse error: %s", e))
 	}
+	// A join child may also appear in the parser's compatibility Subsearches
+	// slice. Keep its first displayed warning within this query.
+	seen := make(map[string]bool)
+	unique := res.Warnings[:warningStart]
+	for _, warning := range res.Warnings[warningStart:] {
+		if !seen[warning.Message] {
+			seen[warning.Message] = true
+			unique = append(unique, warning)
+		}
+	}
+	res.Warnings = unique
+}
+
+// collectKQLDiagnostics visits independently returned join results in parser order.
+func collectKQLDiagnostics(result *kql.ParseResult) (warnings, errors []string) {
+	if result == nil {
+		return nil, nil
+	}
+	warnings = append(warnings, result.Warnings...)
+	errors = append(errors, result.Errors...)
+	for _, join := range result.Joins {
+		childWarnings, childErrors := collectKQLDiagnostics(join.Subsearch)
+		warnings = append(warnings, childWarnings...)
+		errors = append(errors, childErrors...)
+	}
+	return warnings, errors
+}
+
+// collectSPLDiagnostics visits join and direct-subsearch results in parser order.
+func collectSPLDiagnostics(result *spl.ParseResult) (warnings, errors []string) {
+	if result == nil {
+		return nil, nil
+	}
+	warnings = append(warnings, result.Warnings...)
+	errors = append(errors, result.Errors...)
+	for _, join := range result.Joins {
+		childWarnings, childErrors := collectSPLDiagnostics(join.Subsearch)
+		warnings = append(warnings, childWarnings...)
+		errors = append(errors, childErrors...)
+	}
+	for _, subsearch := range result.Subsearches {
+		childWarnings, childErrors := collectSPLDiagnostics(subsearch)
+		warnings = append(warnings, childWarnings...)
+		errors = append(errors, childErrors...)
+	}
+	return warnings, errors
 }
 
 func hasOpaqueKQLFilter(result *kql.ParseResult) bool {
