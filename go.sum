@@ -1,7 +1,7 @@
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
-github.com/craftedsignal/kql-parser v0.7.5-0.20261116004434-3c85e06f9936 h1:R7ZPg9nSEMhpNoopWOWKHTZ91QXKEhyUkpaABIet7Ws=
-github.com/craftedsignal/kql-parser v0.7.5-0.20261116004434-3c85e06f9936/go.mod h1:gsfGY0uiwubSZph5zgpal16O+gx/suxEqZTh2+A7ass=
+github.com/craftedsignal/kql-parser v0.7.5-0.20261117091803-9a1958dd41ac h1:Q6pBacey/BOpl5Lj0GzXNlWd374HtcFInVtB5O7n3uY=
+github.com/craftedsignal/kql-parser v0.7.5-0.20261117091803-9a1958dd41ac/go.mod h1:gsfGY0uiwubSZph5zgpal16O+gx/suxEqZTh2+A7ass=
 github.com/craftedsignal/leql-parser v0.7.8-0.20261115211734-1c3570cc1690 h1:u4vHdRsZn0Kq/GPn6SWtoBg6RJnt4NE3GIKWFmM6O98=
 github.com/craftedsignal/leql-parser v0.7.8-0.20261115211734-1c3570cc1690/go.mod h1:SQNw1GW3HeG7e5FWuzmb0EwVE/wBxxQs39SOjwy/0U4=
 github.com/craftedsignal/sdk-go v1.1.2 h1:pqkuT+w5a+tWS9mlpch7HJpWC1POghZTitbz90QOy1Y=
