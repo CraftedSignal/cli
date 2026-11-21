@@ -259,7 +259,7 @@ func TestWave2SyntaxAndSourceFailuresRemainInvalid(t *testing.T) {
 	for _, tc := range []struct{ name, platform, query, message string }{
 		{"KQL source", "sentinel", `Events | join kind=inner (OtherEvents | where () on Account`, "parse error: dataflow source unavailable: join child has no authored owner"},
 		{"KQL syntax", "sentinel", `Events | where (`, "parse error: no viable alternative at input '('"},
-		{"SPL syntax", "splunk", `| where (`, "parse error: mismatched input '<EOF>' expecting {NOT, EVAL, FROM, MSTATS, INPUTLOOKUP, LIKE, MATCH, CIDRMATCH, ISNOTNULL, ISNULL, '(', '[', '-', QUOTED_STRING, TIME_SPAN, NUMBER, '*', TEMPLATE_VAR, IDENTIFIER}"},
+		{"SPL syntax", "splunk", `| where (`, "parse error: mismatched input '<EOF>' expecting {NOT, WHERE, SEARCH, EVAL, STATS, TABLE, FIELDS, RENAME, REX, DEDUP, SORT, HEAD, TAIL, TOP, RARE, LOOKUP, JOIN, APPEND, TRANSACTION, SPATH, EVENTSTATS, STREAMSTATS, TIMECHART, CHART, FILLNULL, MAKEMV, MVEXPAND, FORMAT, CONVERT, BUCKET, BIN, REST, TSTATS, FROM, MSTATS, INPUTLOOKUP, LIKE, MATCH, CIDRMATCH, ISNOTNULL, ISNULL, '(', '[', '-', QUOTED_STRING, TIME_SPAN, DOTTED_NUMBER, NUMBER, DIGIT_WORD, '*', TEMPLATE_VAR, IDENTIFIER}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := ValidateRule(craftedsignal.Detection{Title: "Bad query", Platform: tc.platform, Query: tc.query}, "rules/bad.yaml")
