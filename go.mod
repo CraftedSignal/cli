@@ -3,10 +3,10 @@ module github.com/craftedsignal/cli
 go 1.25.6
 
 require (
-	github.com/craftedsignal/kql-parser v0.7.5-0.20261117091803-9a1958dd41ac
-	github.com/craftedsignal/leql-parser v0.7.8-0.20261115211734-1c3570cc1690
+	github.com/craftedsignal/kql-parser v0.7.6
+	github.com/craftedsignal/leql-parser v0.7.9-0.20261121152232-69c223f95ac0
 	github.com/craftedsignal/sdk-go v1.1.2
-	github.com/craftedsignal/spl-parser v0.10.5-0.20261115231924-645f0823feb6
+	github.com/craftedsignal/spl-parser v0.11.1-0.20261121152640-acbe845832d7
 	gopkg.in/yaml.v3 v3.0.1
 )
 
