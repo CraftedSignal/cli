@@ -6,7 +6,7 @@ require (
 	github.com/craftedsignal/kql-parser v0.7.8
 	github.com/craftedsignal/leql-parser v0.7.9-0.20261121152232-69c223f95ac0
 	github.com/craftedsignal/sdk-go v1.1.2
-	github.com/craftedsignal/spl-parser v0.11.3
+	github.com/craftedsignal/spl-parser v0.11.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 
