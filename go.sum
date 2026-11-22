@@ -6,8 +6,8 @@ github.com/craftedsignal/leql-parser v0.7.9 h1:LKAifhtsxngP5DXApclVHsNPHXWIpozlR
 github.com/craftedsignal/leql-parser v0.7.9/go.mod h1:SQNw1GW3HeG7e5FWuzmb0EwVE/wBxxQs39SOjwy/0U4=
 github.com/craftedsignal/sdk-go v1.1.2 h1:pqkuT+w5a+tWS9mlpch7HJpWC1POghZTitbz90QOy1Y=
 github.com/craftedsignal/sdk-go v1.1.2/go.mod h1:YnwWBxxy6IxPA8QsrBJ25zUc+eFMDjreU8vcaSHMi4g=
-github.com/craftedsignal/spl-parser v0.11.6 h1:VpjKKpDneqHGHFugMxxd9aw84miLGxN96OH7KFxg/Nk=
-github.com/craftedsignal/spl-parser v0.11.6/go.mod h1:xhP/+o21yDSuYxMDxxkRMMde2+K5fezyisZSKbBmBno=
+github.com/craftedsignal/spl-parser v0.11.7 h1:wbm/JQM3P54absr4f1RQlgAZ382LVbDZT7mYBlC9klY=
+github.com/craftedsignal/spl-parser v0.11.7/go.mod h1:xhP/+o21yDSuYxMDxxkRMMde2+K5fezyisZSKbBmBno=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
