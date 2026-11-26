@@ -256,16 +256,27 @@ func TestWave2SameWarningKeptForEachFile(t *testing.T) {
 }
 
 func TestWave2SyntaxAndSourceFailuresRemainInvalid(t *testing.T) {
-	for _, tc := range []struct{ name, platform, query, message string }{
-		{"KQL source", "sentinel", `Events | join kind=inner (OtherEvents | where () on Account`, "parse error: dataflow source unavailable: join child has no authored owner"},
-		{"KQL syntax", "sentinel", `Events | where (`, "parse error: no viable alternative at input '('"},
-		{"SPL syntax", "splunk", `| where (`, "parse error: mismatched input '<EOF>' expecting {NOT, WHERE, SEARCH, EVAL, STATS, TABLE, FIELDS, RENAME, REX, DEDUP, SORT, HEAD, TAIL, TOP, RARE, LOOKUP, JOIN, APPEND, TRANSACTION, SPATH, EVENTSTATS, STREAMSTATS, TIMECHART, CHART, FILLNULL, MAKEMV, MVEXPAND, FORMAT, CONVERT, BUCKET, BIN, REST, TSTATS, FROM, MSTATS, INPUTLOOKUP, LIKE, MATCH, CIDRMATCH, ISNOTNULL, ISNULL, '(', '[', '-', QUOTED_STRING, TIME_SPAN, DOTTED_NUMBER, NUMBER, DIGIT_WORD, '*', TEMPLATE_VAR, IDENTIFIER}"},
+	for _, tc := range []struct {
+		name, platform, query, message string
+		expectedTokens                 bool // the message continues with the grammar's expected-token set
+	}{
+		{name: "KQL source", platform: "sentinel", query: `Events | join kind=inner (OtherEvents | where () on Account`, message: "parse error: dataflow source unavailable: join child has no authored owner"},
+		{name: "KQL syntax", platform: "sentinel", query: `Events | where (`, message: "parse error: no viable alternative at input '('"},
+		{name: "SPL syntax", platform: "splunk", query: `| where (`, message: "parse error: mismatched input '<EOF>' expecting {", expectedTokens: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := ValidateRule(craftedsignal.Detection{Title: "Bad query", Platform: tc.platform, Query: tc.query}, "rules/bad.yaml")
-			want := []ValidationError{{File: "rules/bad.yaml", Title: "Bad query", Field: "query", Message: tc.message}}
-			if result.Valid() || !reflect.DeepEqual(result.Errors, want) {
-				t.Fatalf("parser failure must invalidate exact source: got=%+v want=%+v", result, want)
+			if result.Valid() || len(result.Errors) != 1 {
+				t.Fatalf("parser failure must invalidate exact source: got=%+v", result)
+			}
+			got := result.Errors[0]
+			// Every grammar addition changes the token inventory; it is not a CLI contract.
+			if tc.expectedTokens && strings.HasPrefix(got.Message, tc.message) {
+				got.Message = tc.message
+			}
+			want := ValidationError{File: "rules/bad.yaml", Title: "Bad query", Field: "query", Message: tc.message}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("parser failure must invalidate exact source: got=%+v want=%+v", got, want)
 			}
 		})
 	}
